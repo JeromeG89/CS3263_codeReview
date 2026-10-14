@@ -1,0 +1,50 @@
+# Few-shot example shown in the z3_guided / z3_repair prompts. NOT part of the evaluation set.
+id: EX-01
+pair: EX-01
+label: unsafe
+tier: 2
+category: bounds
+twin: code
+entry: scaled_get
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: i, type: int}
+  - {name: k, type: int}
+requires:
+  - "1 <= n && n <= 32"
+  - "0 <= i && i <= 100"
+  - "-1000 <= k && k <= 1000"
+elem_requires:
+  a: "-1000 <= _ && _ <= 1000"
+witness: {a: [0, 0, 0], n: 3, i: 3, k: 1}
+code: |
+  int scaled_get(const int *a, int n, int i, int k) {
+      int r = 0;
+      if (i > n) {
+          return -1;
+      }
+      r = a[i] * k;
+      return r + 1;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  i = BitVec('i', 32)
+  k = BitVec('k', 32)
+  s = Solver()
+  # preconditions
+  s.add(1 <= n, n <= 32, 0 <= i, i <= 100, -1000 <= k, k <= 1000)
+  # element precondition, only for the element that is read
+  s.add(Implies(And(0 <= i, i < n), And(-1000 <= a[i], a[i] <= 1000)))
+  # path condition of the statements after the early return
+  reach = Not(i > n)
+  r = a[i] * k
+  violations = [
+      And(reach, Or(i < 0, i >= n)),                         # a[i] out of bounds
+      And(reach, Not(BVMulNoOverflow(a[i], k, True))),       # a[i] * k overflows
+      And(reach, Not(BVMulNoUnderflow(a[i], k))),
+      And(reach, Not(BVAddNoOverflow(r, BitVecVal(1, 32), True))),  # r + 1 overflows
+  ]
+  s.add(Or(violations))
