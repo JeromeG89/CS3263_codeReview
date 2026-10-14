@@ -1,0 +1,6 @@
+run_name: smoke
+workers: 1
+max_repairs: 3
+models:
+  - {provider: ollama, model: "qwen2.5-coder:7b", max_tokens: 3072, temperature: 0.0}
+approaches: [direct, direct_cot, z3, z3_guided, z3_repair]

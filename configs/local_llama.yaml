@@ -1,0 +1,7 @@
+# Local open-weight models served by Ollama (`ollama serve`).
+run_name: local_llama
+workers: 1            # Ollama serves one request at a time on a laptop
+max_repairs: 3
+models:
+  - {provider: ollama, model: "llama3.2:3b", max_tokens: 3072, temperature: 0.0}
+approaches: [direct, direct_cot, z3, z3_guided, z3_repair]
