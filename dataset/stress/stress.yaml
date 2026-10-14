@@ -1,0 +1,76 @@
+# Stress instances: labels established by reasoning + fuzzing, but intractable for the oracles
+# (reference Z3 and CBMC both time out: nonlinear 32-bit multiply/divide). Excluded from the
+# evaluation set and discussed in the report as a solver-limitation case study.
+---
+id: STRESS-OVF-01-U
+pair: STRESS-OVF-01
+label: unsafe
+tier: 4
+category: overflow
+twin: code
+tags: [helper_function, broken_overflow_check, cert_int32]
+description: Multiplication-overflow check that performs the overflowing multiplication itself.
+bug_explanation: qty = price = 65536 overflows inside mul_ok.
+entry: scaled_total
+params:
+  - {name: qty, type: int}
+  - {name: price, type: int}
+requires: ["qty >= 0", "price >= 0"]
+witness: {qty: 65536, price: 65536}
+code: |
+  static int mul_ok(int a, int b) {
+      return a == 0 || (a * b) / a == b;
+  }
+
+  int scaled_total(int qty, int price) {
+      if (!mul_ok(qty, price)) {
+          return -1;
+      }
+      return qty * price;
+  }
+reference_z3: |
+  from z3 import *
+  qty, price = BitVecs('qty price', 32)
+  s = Solver()
+  s.add(qty >= 0, price >= 0)
+  mul_bad = Or(Not(BVMulNoOverflow(qty, price, True)), Not(BVMulNoUnderflow(qty, price)))
+  check_bad = And(qty != 0, Or(mul_bad, Not(BVSDivNoOverflow(qty * price, qty))))
+  ok = Or(qty == 0, (qty * price) / qty == price)
+  s.add(Or(check_bad, And(ok, mul_bad)))
+---
+id: STRESS-OVF-01-S
+pair: STRESS-OVF-01
+label: safe
+tier: 4
+category: overflow
+twin: code
+tags: [helper_function, broken_overflow_check, cert_int32]
+description: Division-based check b <= INT_MAX / a, which cannot overflow for a > 0.
+entry: scaled_total
+params:
+  - {name: qty, type: int}
+  - {name: price, type: int}
+requires: ["qty >= 0", "price >= 0"]
+code: |
+  #include <limits.h>
+
+  static int mul_ok(int a, int b) {
+      return a == 0 || b <= INT_MAX / a;
+  }
+
+  int scaled_total(int qty, int price) {
+      if (!mul_ok(qty, price)) {
+          return -1;
+      }
+      return qty * price;
+  }
+reference_z3: |
+  from z3 import *
+  qty, price = BitVecs('qty price', 32)
+  s = Solver()
+  s.add(qty >= 0, price >= 0)
+  INT_MAX = BitVecVal(2**31 - 1, 32)
+  check_bad = And(qty != 0, Or(qty == 0, Not(BVSDivNoOverflow(INT_MAX, qty))))
+  ok = Or(qty == 0, price <= INT_MAX / qty)
+  mul_bad = Or(Not(BVMulNoOverflow(qty, price, True)), Not(BVMulNoUnderflow(qty, price)))
+  s.add(Or(check_bad, And(ok, mul_bad)))

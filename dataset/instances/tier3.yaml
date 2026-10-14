@@ -1,0 +1,1048 @@
+# Tier 3: loops (bounded by preconditions; one pair needs an inductive argument).
+---
+id: T3-BND-01-U
+pair: T3-BND-01
+label: unsafe
+tier: 3
+category: bounds
+twin: code
+tags: [off_by_one, loop_bound]
+description: Array sum whose loop runs while i <= n.
+bug_explanation: The last iteration reads a[n].
+entry: sum
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 8"]
+elem_requires: {a: "-1000 <= _ && _ <= 1000"}
+witness: {a: [1], n: 1}
+unwind: 12
+code: |
+  int sum(const int *a, int n) {
+      int s = 0;
+      for (int i = 0; i <= n; i++) {
+          s += a[i];
+      }
+      return s;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8)
+  viol = []
+  acc = BitVecVal(0, 32)
+  for t in range(10):                      # i = 0..n, at most 9 iterations
+      i = BitVecVal(t, 32)
+      run = i <= n
+      e = a[i]
+      s.add(Implies(And(0 <= i, i < n), And(-1000 <= e, e <= 1000)))
+      viol.append(And(run, Or(i < 0, i >= n)))
+      viol.append(And(run, Or(Not(BVAddNoOverflow(acc, e, True)), Not(BVAddNoUnderflow(acc, e)))))
+      acc = If(run, acc + e, acc)
+  s.add(Or(viol))
+---
+id: T3-BND-01-S
+pair: T3-BND-01
+label: safe
+tier: 3
+category: bounds
+twin: code
+tags: [off_by_one, loop_bound]
+description: Array sum with i < n; sum bounded by 8 * 1000.
+entry: sum
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 8"]
+elem_requires: {a: "-1000 <= _ && _ <= 1000"}
+unwind: 12
+code: |
+  int sum(const int *a, int n) {
+      int s = 0;
+      for (int i = 0; i < n; i++) {
+          s += a[i];
+      }
+      return s;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8)
+  viol = []
+  acc = BitVecVal(0, 32)
+  for t in range(9):
+      i = BitVecVal(t, 32)
+      run = i < n
+      e = a[i]
+      s.add(Implies(And(0 <= i, i < n), And(-1000 <= e, e <= 1000)))
+      viol.append(And(run, Or(i < 0, i >= n)))
+      viol.append(And(run, Or(Not(BVAddNoOverflow(acc, e, True)), Not(BVAddNoUnderflow(acc, e)))))
+      acc = If(run, acc + e, acc)
+  s.add(Or(viol))
+---
+id: T3-BND-02-U
+pair: T3-BND-02
+label: unsafe
+tier: 3
+category: bounds
+twin: code
+tags: [off_by_one, mirror_index]
+description: In-place reversal swapping a[i] with a[n - i].
+bug_explanation: At i = 0 the mirror index is n.
+entry: reverse
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 10"]
+witness: {a: [1, 2], n: 2}
+unwind: 12
+code: |
+  void reverse(int *a, int n) {
+      for (int i = 0; i < n / 2; i++) {
+          int tmp = a[i];
+          a[i] = a[n - i];
+          a[n - i] = tmp;
+      }
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 10)
+  viol = []
+  for t in range(6):
+      i = BitVecVal(t, 32)
+      run = i < n / 2
+      j = n - i
+      viol.append(And(run, Or(i < 0, i >= n, j < 0, j >= n)))
+  s.add(Or(viol))
+---
+id: T3-BND-02-S
+pair: T3-BND-02
+label: safe
+tier: 3
+category: bounds
+twin: code
+tags: [off_by_one, mirror_index]
+description: In-place reversal swapping a[i] with a[n - 1 - i].
+entry: reverse
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 10"]
+unwind: 12
+code: |
+  void reverse(int *a, int n) {
+      for (int i = 0; i < n / 2; i++) {
+          int tmp = a[i];
+          a[i] = a[n - 1 - i];
+          a[n - 1 - i] = tmp;
+      }
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 10)
+  viol = []
+  for t in range(6):
+      i = BitVecVal(t, 32)
+      run = i < n / 2
+      j = n - 1 - i
+      viol.append(And(run, Or(i < 0, i >= n, j < 0, j >= n)))
+  s.add(Or(viol))
+---
+id: T3-BND-03-U
+pair: T3-BND-03
+label: unsafe
+tier: 3
+category: bounds
+twin: precondition
+tags: [data_dependent_index, histogram]
+description: Histogram where data values may equal the number of bins.
+bug_explanation: A data value equal to bins indexes hist[bins].
+entry: histogram
+params:
+  - {name: data, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: hist, type: "int[]", len: bins}
+  - {name: bins, type: int}
+requires: ["1 <= n && n <= 8", "1 <= bins && bins <= 16"]
+elem_requires:
+  data: "0 <= _ && _ <= bins"
+  hist: "0 <= _ && _ <= 1000"
+witness: {data: [1], n: 1, hist: [0], bins: 1}
+unwind: 12
+code: |
+  void histogram(const int *data, int n, int *hist, int bins) {
+      for (int i = 0; i < n; i++) {
+          hist[data[i]]++;
+      }
+  }
+reference_z3: |
+  from z3 import *
+  data = Array('data', BitVecSort(32), BitVecSort(32))
+  hist = Array('hist', BitVecSort(32), BitVecSort(32))
+  n, bins = BitVecs('n bins', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8, 1 <= bins, bins <= 16)
+  viol = []
+  h = hist
+  for t in range(8):
+      i = BitVecVal(t, 32)
+      run = i < n
+      d = data[i]
+      s.add(Implies(And(0 <= i, i < n), And(0 <= d, d <= bins)))
+      s.add(Implies(And(0 <= d, d < bins), And(0 <= hist[d], hist[d] <= 1000)))
+      viol.append(And(run, Or(i < 0, i >= n)))
+      viol.append(And(run, Or(d < 0, d >= bins)))
+      cur = h[d]
+      viol.append(And(run, Not(BVAddNoOverflow(cur, BitVecVal(1, 32), True))))
+      h = If(run, Store(h, d, cur + 1), h)
+  s.add(Or(viol))
+---
+id: T3-BND-03-S
+pair: T3-BND-03
+label: safe
+tier: 3
+category: bounds
+twin: precondition
+tags: [data_dependent_index, histogram]
+description: Same code; data values strictly below bins.
+entry: histogram
+params:
+  - {name: data, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: hist, type: "int[]", len: bins}
+  - {name: bins, type: int}
+requires: ["1 <= n && n <= 8", "1 <= bins && bins <= 16"]
+elem_requires:
+  data: "0 <= _ && _ < bins"
+  hist: "0 <= _ && _ <= 1000"
+unwind: 12
+code_from: T3-BND-03-U
+reference_z3: |
+  from z3 import *
+  data = Array('data', BitVecSort(32), BitVecSort(32))
+  hist = Array('hist', BitVecSort(32), BitVecSort(32))
+  n, bins = BitVecs('n bins', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8, 1 <= bins, bins <= 16)
+  viol = []
+  h = hist
+  for t in range(8):
+      i = BitVecVal(t, 32)
+      run = i < n
+      d = data[i]
+      s.add(Implies(And(0 <= i, i < n), And(0 <= d, d < bins)))
+      s.add(Implies(And(0 <= d, d < bins), And(0 <= hist[d], hist[d] <= 1000)))
+      viol.append(And(run, Or(i < 0, i >= n)))
+      viol.append(And(run, Or(d < 0, d >= bins)))
+      cur = h[d]
+      viol.append(And(run, Not(BVAddNoOverflow(cur, BitVecVal(1, 32), True))))
+      h = If(run, Store(h, d, cur + 1), h)
+  s.add(Or(viol))
+---
+id: T3-BND-04-U
+pair: T3-BND-04
+label: unsafe
+tier: 3
+category: bounds
+twin: code
+tags: [unsigned_loop, wraparound]
+description: Backwards loop with an unsigned counter; i >= 0 is always true.
+bug_explanation: After i = 0 the counter wraps to UINT_MAX and a[UINT_MAX] is read.
+entry: sum_backwards
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 8"]
+elem_requires: {a: "-1000 <= _ && _ <= 1000"}
+witness: {a: [3], n: 1}
+unwind: 12
+code: |
+  int sum_backwards(const int *a, int n) {
+      int s = 0;
+      for (unsigned i = n - 1; i >= 0; i--) {
+          s += a[i];
+      }
+      return s;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8)
+  viol = []
+  acc = BitVecVal(0, 32)
+  i = n - 1                                # unsigned counter (same bits)
+  for t in range(10):                      # unsigned i >= 0 is always true
+      e = a[i]
+      inb = ULT(i, n)                      # n > 0, so unsigned compare is exact
+      s.add(Implies(inb, And(-1000 <= e, e <= 1000)))
+      viol.append(Not(inb))
+      viol.append(And(inb, Or(Not(BVAddNoOverflow(acc, e, True)), Not(BVAddNoUnderflow(acc, e)))))
+      acc = acc + e
+      i = i - 1
+  s.add(Or(viol))
+---
+id: T3-BND-04-S
+pair: T3-BND-04
+label: safe
+tier: 3
+category: bounds
+twin: code
+tags: [unsigned_loop, wraparound]
+description: Backwards loop with a signed counter.
+entry: sum_backwards
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 8"]
+elem_requires: {a: "-1000 <= _ && _ <= 1000"}
+unwind: 12
+code: |
+  int sum_backwards(const int *a, int n) {
+      int s = 0;
+      for (int i = n - 1; i >= 0; i--) {
+          s += a[i];
+      }
+      return s;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8)
+  viol = []
+  acc = BitVecVal(0, 32)
+  for t in range(9):
+      i = n - 1 - t
+      run = i >= 0
+      e = a[i]
+      s.add(Implies(And(0 <= i, i < n), And(-1000 <= e, e <= 1000)))
+      viol.append(And(run, Or(i < 0, i >= n)))
+      viol.append(And(run, Or(Not(BVAddNoOverflow(acc, e, True)), Not(BVAddNoUnderflow(acc, e)))))
+      acc = If(run, acc + e, acc)
+  s.add(Or(viol))
+---
+id: T3-BND-05-U
+pair: T3-BND-05
+label: unsafe
+tier: 3
+category: bounds
+twin: code
+tags: [min_max_confusion]
+description: Copies max(src_len, dst_len) elements instead of the minimum.
+bug_explanation: src_len > dst_len writes past the end of dst.
+entry: copy_prefix
+params:
+  - {name: dst, type: "int[]", len: dst_len}
+  - {name: dst_len, type: int}
+  - {name: src, type: "int[]", len: src_len}
+  - {name: src_len, type: int}
+requires: ["0 <= dst_len && dst_len <= 8", "0 <= src_len && src_len <= 8"]
+witness: {dst: [], dst_len: 0, src: [5], src_len: 1}
+unwind: 12
+code: |
+  void copy_prefix(int *dst, int dst_len, const int *src, int src_len) {
+      int m = src_len > dst_len ? src_len : dst_len;
+      for (int i = 0; i < m; i++) {
+          dst[i] = src[i];
+      }
+  }
+reference_z3: |
+  from z3 import *
+  dst = Array('dst', BitVecSort(32), BitVecSort(32))
+  src = Array('src', BitVecSort(32), BitVecSort(32))
+  dst_len, src_len = BitVecs('dst_len src_len', 32)
+  s = Solver()
+  s.add(0 <= dst_len, dst_len <= 8, 0 <= src_len, src_len <= 8)
+  m = If(src_len > dst_len, src_len, dst_len)
+  viol = []
+  for t in range(9):
+      i = BitVecVal(t, 32)
+      run = i < m
+      viol.append(And(run, Or(i < 0, i >= dst_len, i >= src_len)))
+  s.add(Or(viol))
+---
+id: T3-BND-05-S
+pair: T3-BND-05
+label: safe
+tier: 3
+category: bounds
+twin: code
+tags: [min_max_confusion]
+description: Copies min(src_len, dst_len) elements.
+entry: copy_prefix
+params:
+  - {name: dst, type: "int[]", len: dst_len}
+  - {name: dst_len, type: int}
+  - {name: src, type: "int[]", len: src_len}
+  - {name: src_len, type: int}
+requires: ["0 <= dst_len && dst_len <= 8", "0 <= src_len && src_len <= 8"]
+unwind: 12
+code: |
+  void copy_prefix(int *dst, int dst_len, const int *src, int src_len) {
+      int m = src_len < dst_len ? src_len : dst_len;
+      for (int i = 0; i < m; i++) {
+          dst[i] = src[i];
+      }
+  }
+reference_z3: |
+  from z3 import *
+  dst = Array('dst', BitVecSort(32), BitVecSort(32))
+  src = Array('src', BitVecSort(32), BitVecSort(32))
+  dst_len, src_len = BitVecs('dst_len src_len', 32)
+  s = Solver()
+  s.add(0 <= dst_len, dst_len <= 8, 0 <= src_len, src_len <= 8)
+  m = If(src_len < dst_len, src_len, dst_len)
+  viol = []
+  for t in range(9):
+      i = BitVecVal(t, 32)
+      run = i < m
+      viol.append(And(run, Or(i < 0, i >= dst_len, i >= src_len)))
+  s.add(Or(viol))
+---
+id: T3-DIV-01-U
+pair: T3-DIV-01
+label: unsafe
+tier: 3
+category: div_zero
+twin: code
+tags: [empty_input, counting]
+description: Mean of the positive elements; there may be none.
+bug_explanation: All elements <= 0 leaves cnt == 0.
+entry: avg_positive
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 8"]
+elem_requires: {a: "-1000 <= _ && _ <= 1000"}
+witness: {a: [-1], n: 1}
+unwind: 12
+code: |
+  int avg_positive(const int *a, int n) {
+      int sum = 0;
+      int cnt = 0;
+      for (int i = 0; i < n; i++) {
+          if (a[i] > 0) {
+              sum += a[i];
+              cnt++;
+          }
+      }
+      return sum / cnt;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8)
+  viol = []
+  sm, cnt = BitVecVal(0, 32), BitVecVal(0, 32)
+  for t in range(8):
+      i = BitVecVal(t, 32)
+      run = i < n
+      e = a[i]
+      s.add(Implies(And(0 <= i, i < n), And(-1000 <= e, e <= 1000)))
+      viol.append(And(run, Or(i < 0, i >= n)))
+      pos = And(run, e > 0)
+      viol.append(And(pos, Or(Not(BVAddNoOverflow(sm, e, True)), Not(BVAddNoUnderflow(sm, e)))))
+      sm = If(pos, sm + e, sm)
+      cnt = If(pos, cnt + 1, cnt)
+  viol.append(Or(cnt == 0, Not(BVSDivNoOverflow(sm, cnt))))
+  s.add(Or(viol))
+---
+id: T3-DIV-01-S
+pair: T3-DIV-01
+label: safe
+tier: 3
+category: div_zero
+twin: code
+tags: [empty_input, counting]
+description: Returns 0 when no element is positive.
+entry: avg_positive
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 8"]
+elem_requires: {a: "-1000 <= _ && _ <= 1000"}
+unwind: 12
+code: |
+  int avg_positive(const int *a, int n) {
+      int sum = 0;
+      int cnt = 0;
+      for (int i = 0; i < n; i++) {
+          if (a[i] > 0) {
+              sum += a[i];
+              cnt++;
+          }
+      }
+      return cnt == 0 ? 0 : sum / cnt;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8)
+  viol = []
+  sm, cnt = BitVecVal(0, 32), BitVecVal(0, 32)
+  for t in range(8):
+      i = BitVecVal(t, 32)
+      run = i < n
+      e = a[i]
+      s.add(Implies(And(0 <= i, i < n), And(-1000 <= e, e <= 1000)))
+      viol.append(And(run, Or(i < 0, i >= n)))
+      pos = And(run, e > 0)
+      viol.append(And(pos, Or(Not(BVAddNoOverflow(sm, e, True)), Not(BVAddNoUnderflow(sm, e)))))
+      sm = If(pos, sm + e, sm)
+      cnt = If(pos, cnt + 1, cnt)
+  viol.append(And(cnt != 0, Or(cnt == 0, Not(BVSDivNoOverflow(sm, cnt)))))
+  s.add(Or(viol))
+---
+id: T3-DIV-02-U
+pair: T3-DIV-02
+label: unsafe
+tier: 3
+category: div_zero
+twin: precondition
+tags: [base_conversion]
+description: Digit sum in a base that may be zero.
+bug_explanation: base = 0 with x > 0 divides by zero in the first iteration.
+entry: digit_sum
+params:
+  - {name: x, type: int}
+  - {name: base, type: int}
+requires: ["0 <= x && x <= 1000000", "0 <= base && base <= 16", "base != 1"]
+witness: {x: 5, base: 0}
+unwind: 24
+code: |
+  int digit_sum(int x, int base) {
+      int s = 0;
+      while (x > 0) {
+          s += x % base;
+          x /= base;
+      }
+      return s;
+  }
+reference_z3: |
+  from z3 import *
+  x, base = BitVecs('x base', 32)
+  s = Solver()
+  s.add(0 <= x, x <= 1000000, 0 <= base, base <= 16, base != 1)
+  viol = []
+  acc, xv, alive = BitVecVal(0, 32), x, BoolVal(True)
+  for t in range(21):
+      run = And(alive, xv > 0)
+      viol.append(And(run, Or(base == 0, Not(BVSDivNoOverflow(xv, base)))))
+      r = SRem(xv, base)
+      viol.append(And(run, base != 0, Or(Not(BVAddNoOverflow(acc, r, True)), Not(BVAddNoUnderflow(acc, r)))))
+      acc = If(run, acc + r, acc)
+      xv = If(run, xv / base, xv)
+      alive = run
+  s.add(Or(viol))
+---
+id: T3-DIV-02-S
+pair: T3-DIV-02
+label: safe
+tier: 3
+category: div_zero
+twin: precondition
+tags: [base_conversion]
+description: Same code; base in [2, 16], at most 20 iterations.
+entry: digit_sum
+params:
+  - {name: x, type: int}
+  - {name: base, type: int}
+requires: ["0 <= x && x <= 1000000", "2 <= base && base <= 16"]
+unwind: 24
+code_from: T3-DIV-02-U
+reference_z3: |
+  from z3 import *
+  x, base = BitVecs('x base', 32)
+  s = Solver()
+  s.add(0 <= x, x <= 1000000, 2 <= base, base <= 16)
+  viol = []
+  acc, xv, alive = BitVecVal(0, 32), x, BoolVal(True)
+  for t in range(21):                      # x <= 10^6 < 2^20 and base >= 2: at most 20 iterations
+      run = And(alive, xv > 0)
+      viol.append(And(run, Or(base == 0, Not(BVSDivNoOverflow(xv, base)))))
+      r = SRem(xv, base)
+      viol.append(And(run, base != 0, Or(Not(BVAddNoOverflow(acc, r, True)), Not(BVAddNoUnderflow(acc, r)))))
+      acc = If(run, acc + r, acc)
+      xv = If(run, xv / base, xv)
+      alive = run
+  viol.append(And(alive, xv > 0))          # unrolling not exhaustive (cannot happen)
+  s.add(Or(viol))
+---
+id: T3-OVF-01-U
+pair: T3-OVF-01
+label: unsafe
+tier: 3
+category: overflow
+twin: precondition
+tags: [numeric_boundary, factorial]
+description: Factorial for k up to 13.
+bug_explanation: 13! = 6227020800 > INT_MAX.
+entry: factorial
+params:
+  - {name: k, type: int}
+requires: ["0 <= k && k <= 13"]
+witness: {k: 13}
+unwind: 16
+code: |
+  int factorial(int k) {
+      int r = 1;
+      for (int i = 2; i <= k; i++) {
+          r *= i;
+      }
+      return r;
+  }
+reference_z3: |
+  from z3 import *
+  k = BitVec('k', 32)
+  s = Solver()
+  s.add(0 <= k, k <= 13)
+  r = BitVecVal(1, 32)
+  viol = []
+  for t in range(2, 15):
+      i = BitVecVal(t, 32)
+      run = i <= k
+      viol.append(And(run, Or(Not(BVMulNoOverflow(r, i, True)), Not(BVMulNoUnderflow(r, i)))))
+      r = If(run, r * i, r)
+  s.add(Or(viol))
+---
+id: T3-OVF-01-S
+pair: T3-OVF-01
+label: safe
+tier: 3
+category: overflow
+twin: precondition
+tags: [numeric_boundary, factorial]
+description: Same code; k up to 12 (12! = 479001600).
+entry: factorial
+params:
+  - {name: k, type: int}
+requires: ["0 <= k && k <= 12"]
+unwind: 16
+code_from: T3-OVF-01-U
+reference_z3: |
+  from z3 import *
+  k = BitVec('k', 32)
+  s = Solver()
+  s.add(0 <= k, k <= 12)
+  r = BitVecVal(1, 32)
+  viol = []
+  for t in range(2, 14):
+      i = BitVecVal(t, 32)
+      run = i <= k
+      viol.append(And(run, Or(Not(BVMulNoOverflow(r, i, True)), Not(BVMulNoUnderflow(r, i)))))
+      r = If(run, r * i, r)
+  s.add(Or(viol))
+---
+id: T3-OVF-02-U
+pair: T3-OVF-02
+label: unsafe
+tier: 3
+category: overflow
+twin: precondition
+tags: [accumulation, numeric_boundary]
+description: Sum of squares of up to 8 values in [-20000, 20000].
+bug_explanation: Six or more values of 20000 accumulate past INT_MAX (each square is 4e8).
+entry: sum_squares
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 8"]
+elem_requires: {a: "-20000 <= _ && _ <= 20000"}
+witness: {a: [20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000], n: 8}
+unwind: 12
+code: |
+  int sum_squares(const int *a, int n) {
+      int s = 0;
+      for (int i = 0; i < n; i++) {
+          s += a[i] * a[i];
+      }
+      return s;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8)
+  # Lemma (proved here): for e in [-20000, 20000], e*e cannot overflow and equals the
+  # product of the 16-bit magnitudes, so the cheap 16x16-bit multiplier is exact on the domain.
+  def sq16(x):
+      m = Extract(15, 0, If(x < 0, -x, x))
+      return ZeroExt(16, m) * ZeroExt(16, m)
+  ev = BitVec('lemma_e', 32)
+  lem = Solver()
+  lem.add(-20000 <= ev, ev <= 20000)
+  lem.add(Or(Not(BVMulNoOverflow(ev, ev, True)), Not(BVMulNoUnderflow(ev, ev)), ev * ev != sq16(ev)))
+  assert lem.check() == unsat, "lemma failed"
+  viol = []
+  acc = BitVecVal(0, 32)
+  for t in range(8):
+      i = BitVecVal(t, 32)
+      run = i < n
+      e = a[i]
+      s.add(Implies(And(0 <= i, i < n), And(-20000 <= e, e <= 20000)))
+      viol.append(And(run, Or(i < 0, i >= n)))
+      sq = sq16(e)                         # exact for in-bounds elements (lemma)
+      viol.append(And(run, Or(Not(BVAddNoOverflow(acc, sq, True)), Not(BVAddNoUnderflow(acc, sq)))))
+      acc = If(run, acc + sq, acc)
+  s.add(Or(viol))
+---
+id: T3-OVF-02-S
+pair: T3-OVF-02
+label: safe
+tier: 3
+category: overflow
+twin: precondition
+tags: [accumulation, numeric_boundary]
+description: Same code; values in [-16000, 16000] so the sum is at most 8 * 2.56e8 = 2.048e9.
+entry: sum_squares
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 8"]
+elem_requires: {a: "-16000 <= _ && _ <= 16000"}
+unwind: 12
+code_from: T3-OVF-02-U
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8)
+  # Lemma (proved here, single variable): for e in [-16000, 16000], e*e does not overflow
+  # and lies in [0, 256000000]. The squares are then abstracted by that range, which
+  # over-approximates the program, so UNSAT below still proves safety.
+  ev = BitVec('lemma_e', 32)
+  lem = Solver()
+  lem.add(-16000 <= ev, ev <= 16000)
+  lem.add(Or(Not(BVMulNoOverflow(ev, ev, True)), Not(BVMulNoUnderflow(ev, ev)), ev * ev < 0, ev * ev > 256000000))
+  assert lem.check() == unsat, "lemma failed"
+  viol = []
+  acc = BitVecVal(0, 32)
+  for t in range(8):
+      i = BitVecVal(t, 32)
+      run = i < n
+      viol.append(And(run, Or(i < 0, i >= n)))
+      sq = BitVec(f'sq_{t}', 32)
+      s.add(0 <= sq, sq <= 256000000)
+      viol.append(And(run, Or(Not(BVAddNoOverflow(acc, sq, True)), Not(BVAddNoUnderflow(acc, sq)))))
+      acc = If(run, acc + sq, acc)
+  s.add(Or(viol))
+---
+id: T3-OVF-03-U
+pair: T3-OVF-03
+label: unsafe
+tier: 3
+category: overflow
+twin: code
+tags: [wrong_variable, early_exit]
+description: Early exit tests the current element instead of the running product.
+bug_explanation: Four elements of 1000 with cap 1000 multiply to 1e12.
+entry: product_capped
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: cap, type: int}
+requires: ["1 <= n && n <= 6", "1 <= cap && cap <= 1000"]
+elem_requires: {a: "1 <= _ && _ <= 1000"}
+witness: {a: [1000, 1000, 1000, 1000], n: 4, cap: 1000}
+unwind: 10
+code: |
+  int product_capped(const int *a, int n, int cap) {
+      int p = 1;
+      for (int i = 0; i < n; i++) {
+          if (a[i] > cap) {
+              break;
+          }
+          p *= a[i];
+      }
+      return p;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n, cap = BitVecs('n cap', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 6, 1 <= cap, cap <= 1000)
+  viol = []
+  p, alive = BitVecVal(1, 32), BoolVal(True)
+  for t in range(6):
+      i = BitVecVal(t, 32)
+      run = And(alive, i < n)
+      e = a[i]
+      s.add(Implies(And(0 <= i, i < n), And(1 <= e, e <= 1000)))
+      viol.append(And(run, Or(i < 0, i >= n)))
+      brk = e > cap
+      body = And(run, Not(brk))
+      viol.append(And(body, Or(Not(BVMulNoOverflow(p, e, True)), Not(BVMulNoUnderflow(p, e)))))
+      p = If(body, p * e, p)
+      alive = body
+  s.add(Or(viol))
+---
+id: T3-OVF-03-S
+pair: T3-OVF-03
+label: safe
+tier: 3
+category: overflow
+twin: code
+tags: [wrong_variable, early_exit]
+description: Stops once the product exceeds cap, so every multiplication is at most 1000 * 1000.
+entry: product_capped
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: cap, type: int}
+requires: ["1 <= n && n <= 6", "1 <= cap && cap <= 1000"]
+elem_requires: {a: "1 <= _ && _ <= 1000"}
+unwind: 10
+code: |
+  int product_capped(const int *a, int n, int cap) {
+      int p = 1;
+      for (int i = 0; i < n; i++) {
+          if (p > cap) {
+              break;
+          }
+          p *= a[i];
+      }
+      return p;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n, cap = BitVecs('n cap', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 6, 1 <= cap, cap <= 1000)
+  viol = []
+  p, alive = BitVecVal(1, 32), BoolVal(True)
+  for t in range(6):
+      i = BitVecVal(t, 32)
+      run = And(alive, i < n)
+      brk = p > cap
+      body = And(run, Not(brk))
+      e = a[i]
+      s.add(Implies(And(0 <= i, i < n), And(1 <= e, e <= 1000)))
+      viol.append(And(body, Or(i < 0, i >= n)))
+      viol.append(And(body, Or(Not(BVMulNoOverflow(p, e, True)), Not(BVMulNoUnderflow(p, e)))))
+      p = If(body, p * e, p)
+      alive = body
+  s.add(Or(viol))
+---
+id: T3-OVF-04-U
+pair: T3-OVF-04
+label: unsafe
+tier: 3
+category: overflow
+twin: precondition
+tags: [int_min_div, euclid, semantics_trap]
+description: Euclid's GCD on unconstrained signed ints.
+bug_explanation: a = INT_MIN, b = -1 evaluates INT_MIN % -1, which overflows in C.
+entry: gcd
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+requires: []
+witness: {a: -2147483648, b: -1}
+unwind: 3
+code: |
+  int gcd(int a, int b) {
+      while (b != 0) {
+          int t = a % b;
+          a = b;
+          b = t;
+      }
+      return a;
+  }
+reference_z3: |
+  from z3 import *
+  a, b = BitVecs('a b', 32)
+  s = Solver()
+  # bounded unrolling (2 iterations) is enough to exhibit a violation
+  viol, x, y, alive = [], a, b, BoolVal(True)
+  for t in range(2):
+      run = And(alive, y != 0)
+      viol.append(And(run, Or(y == 0, Not(BVSDivNoOverflow(x, y)))))
+      r = SRem(x, y)
+      x, y = If(run, y, x), If(run, r, y)
+      alive = run
+  s.add(Or(viol))
+---
+id: T3-OVF-04-S
+pair: T3-OVF-04
+label: safe
+tier: 3
+category: overflow
+twin: precondition
+tags: [int_min_div, euclid, semantics_trap, inductive_invariant]
+description: Same code; non-negative inputs. Needs an inductive argument (a, b stay >= 0).
+entry: gcd
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+requires: ["0 <= a && a <= 1000000", "0 <= b && b <= 1000000"]
+unwind: 33
+code_from: T3-OVF-04-U
+reference_z3: |
+  from z3 import *
+  a, b = BitVecs('a b', 32)
+  s = Solver()
+  s.add(0 <= a, a <= 1000000, 0 <= b, b <= 1000000)
+  # Inductive invariant inv(x, y) := x >= 0 and y >= 0 at the loop head.
+  # SAT iff (1) inv fails initially, (2) the body breaks inv, or (3) the body can violate an
+  # invariant from an inv-state. UNSAT therefore proves the loop safe for any number of iterations.
+  x, y = BitVecs('x_head y_head', 32)
+  inv = lambda u, v: And(u >= 0, v >= 0)
+  r = SRem(x, y)
+  s.add(Or(Not(inv(a, b)),
+           And(inv(x, y), y != 0, Not(inv(y, r))),
+           And(inv(x, y), y != 0, Or(y == 0, Not(BVSDivNoOverflow(x, y))))))
+---
+id: T3-SHF-01-U
+pair: T3-SHF-01
+label: unsafe
+tier: 3
+category: shift
+twin: precondition
+tags: [data_dependent_shift, full_width_shift]
+description: Builds a bit mask from bit positions that may be 32.
+bug_explanation: A position of 32 shifts by the full width.
+entry: build_mask
+params:
+  - {name: bits, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 8"]
+elem_requires: {bits: "0 <= _ && _ <= 32"}
+witness: {bits: [32], n: 1}
+unwind: 12
+code: |
+  unsigned build_mask(const int *bits, int n) {
+      unsigned m = 0u;
+      for (int i = 0; i < n; i++) {
+          m |= 1u << bits[i];
+      }
+      return m;
+  }
+reference_z3: |
+  from z3 import *
+  bits = Array('bits', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8)
+  viol = []
+  for t in range(8):
+      i = BitVecVal(t, 32)
+      run = i < n
+      e = bits[i]
+      s.add(Implies(And(0 <= i, i < n), And(0 <= e, e <= 32)))
+      viol.append(And(run, Or(i < 0, i >= n, e < 0, e >= 32)))
+  s.add(Or(viol))
+---
+id: T3-SHF-01-S
+pair: T3-SHF-01
+label: safe
+tier: 3
+category: shift
+twin: precondition
+tags: [data_dependent_shift, full_width_shift]
+description: Same code; bit positions in [0, 31].
+entry: build_mask
+params:
+  - {name: bits, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 8"]
+elem_requires: {bits: "0 <= _ && _ < 32"}
+unwind: 12
+code_from: T3-SHF-01-U
+reference_z3: |
+  from z3 import *
+  bits = Array('bits', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8)
+  viol = []
+  for t in range(8):
+      i = BitVecVal(t, 32)
+      run = i < n
+      e = bits[i]
+      s.add(Implies(And(0 <= i, i < n), And(0 <= e, e < 32)))
+      viol.append(And(run, Or(i < 0, i >= n, e < 0, e >= 32)))
+  s.add(Or(viol))
+---
+id: T3-SHF-02-U
+pair: T3-SHF-02
+label: unsafe
+tier: 3
+category: shift
+twin: precondition
+tags: [sign_bit_shift, numeric_boundary]
+description: floor(log2(x)) by repeated shifting, for any positive int.
+bug_explanation: For x >= 2^30 the loop condition evaluates 1 << 31.
+entry: log2_floor
+params:
+  - {name: x, type: int}
+requires: ["x >= 1"]
+witness: {x: 2147483647}
+unwind: 34
+code: |
+  int log2_floor(int x) {
+      int k = 0;
+      while ((1 << (k + 1)) <= x) {
+          k++;
+      }
+      return k;
+  }
+reference_z3: |
+  from z3 import *
+  x = BitVec('x', 32)
+  s = Solver()
+  s.add(x >= 1)
+  INT_MAX, one = BitVecVal(2**31 - 1, 32), BitVecVal(1, 32)
+  viol, alive = [], BoolVal(True)
+  for t in range(32):                      # k == t while the loop is running
+      amt = BitVecVal(t + 1, 32)
+      viol.append(And(alive, Or(amt < 0, amt >= 32, one > (INT_MAX >> amt))))
+      alive = And(alive, (one << amt) <= x)
+  s.add(Or(viol))
+---
+id: T3-SHF-02-S
+pair: T3-SHF-02
+label: safe
+tier: 3
+category: shift
+twin: precondition
+tags: [sign_bit_shift, numeric_boundary]
+description: Same code; x < 2^30 so the largest shift evaluated is 1 << 30.
+entry: log2_floor
+params:
+  - {name: x, type: int}
+requires: ["1 <= x && x <= 1073741823"]
+unwind: 34
+code_from: T3-SHF-02-U
+reference_z3: |
+  from z3 import *
+  x = BitVec('x', 32)
+  s = Solver()
+  s.add(1 <= x, x <= 1073741823)
+  INT_MAX, one = BitVecVal(2**31 - 1, 32), BitVecVal(1, 32)
+  viol, alive = [], BoolVal(True)
+  for t in range(32):
+      amt = BitVecVal(t + 1, 32)
+      viol.append(And(alive, Or(amt < 0, amt >= 32, one > (INT_MAX >> amt))))
+      alive = And(alive, (one << amt) <= x)
+  s.add(Or(viol))

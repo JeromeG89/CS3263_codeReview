@@ -1,0 +1,1208 @@
+# Tier 2: branching control flow (if/else, guards, early returns, infeasible paths). No loops.
+---
+id: T2-BND-01-U
+pair: T2-BND-01
+label: unsafe
+tier: 2
+category: bounds
+twin: code
+tags: [off_by_one, clamp]
+description: Clamps the index to [0, n] instead of [0, n-1].
+bug_explanation: Any i >= n is clamped to n, so a[n] is read.
+entry: clamped_get
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: i, type: int}
+requires: ["1 <= n && n <= 64"]
+witness: {a: [4], n: 1, i: 5}
+code: |
+  int clamped_get(const int *a, int n, int i) {
+      if (i < 0) {
+          i = 0;
+      }
+      if (i > n) {
+          i = n;
+      }
+      return a[i];
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n, i = BitVecs('n i', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 64)
+  i1 = If(i < 0, BitVecVal(0, 32), i)
+  i2 = If(i1 > n, n, i1)
+  s.add(Or(i2 < 0, i2 >= n))
+---
+id: T2-BND-01-S
+pair: T2-BND-01
+label: safe
+tier: 2
+category: bounds
+twin: code
+tags: [off_by_one, clamp]
+description: Clamps the index to [0, n-1].
+entry: clamped_get
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: i, type: int}
+requires: ["1 <= n && n <= 64"]
+code: |
+  int clamped_get(const int *a, int n, int i) {
+      if (i < 0) {
+          i = 0;
+      }
+      if (i >= n) {
+          i = n - 1;
+      }
+      return a[i];
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n, i = BitVecs('n i', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 64)
+  i1 = If(i < 0, BitVecVal(0, 32), i)
+  sub_bad = And(Not(i1 < n), Not(BVSubNoUnderflow(n, BitVecVal(1, 32), True)))
+  i2 = If(i1 >= n, n - 1, i1)
+  s.add(Or(sub_bad, i2 < 0, i2 >= n))
+---
+id: T2-BND-02-U
+pair: T2-BND-02
+label: unsafe
+tier: 2
+category: bounds
+twin: code
+tags: [copy_paste, wrong_variable]
+description: Bounds guard checks i twice and never checks j < n (copy-paste error).
+bug_explanation: j >= n passes the guard, so a[j] is out of bounds.
+entry: pair_sum
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: i, type: int}
+  - {name: j, type: int}
+requires: ["1 <= n && n <= 64"]
+elem_requires: {a: "-1000000 <= _ && _ <= 1000000"}
+witness: {a: [1, 2], n: 2, i: 0, j: 5}
+code: |
+  int pair_sum(const int *a, int n, int i, int j) {
+      if (i >= 0 && i < n && j >= 0 && i < n) {
+          return a[i] + a[j];
+      }
+      return 0;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n, i, j = BitVecs('n i j', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 64)
+  for x in (i, j):
+      s.add(Implies(And(0 <= x, x < n), And(-1000000 <= a[x], a[x] <= 1000000)))
+  reach = And(i >= 0, i < n, j >= 0, i < n)
+  oob = Or(i < 0, i >= n, j < 0, j >= n)
+  ovf = Or(Not(BVAddNoOverflow(a[i], a[j], True)), Not(BVAddNoUnderflow(a[i], a[j])))
+  s.add(And(reach, Or(oob, ovf)))
+---
+id: T2-BND-02-S
+pair: T2-BND-02
+label: safe
+tier: 2
+category: bounds
+twin: code
+tags: [copy_paste, wrong_variable]
+description: Guard checks both indices.
+entry: pair_sum
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: i, type: int}
+  - {name: j, type: int}
+requires: ["1 <= n && n <= 64"]
+elem_requires: {a: "-1000000 <= _ && _ <= 1000000"}
+code: |
+  int pair_sum(const int *a, int n, int i, int j) {
+      if (i >= 0 && i < n && j >= 0 && j < n) {
+          return a[i] + a[j];
+      }
+      return 0;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n, i, j = BitVecs('n i j', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 64)
+  for x in (i, j):
+      s.add(Implies(And(0 <= x, x < n), And(-1000000 <= a[x], a[x] <= 1000000)))
+  reach = And(i >= 0, i < n, j >= 0, j < n)
+  oob = Or(i < 0, i >= n, j < 0, j >= n)
+  ovf = Or(Not(BVAddNoOverflow(a[i], a[j], True)), Not(BVAddNoUnderflow(a[i], a[j])))
+  s.add(And(reach, Or(oob, ovf)))
+---
+id: T2-BND-03-U
+pair: T2-BND-03
+label: unsafe
+tier: 2
+category: bounds
+twin: code
+tags: [signedness, negative_index]
+description: Signed relative index only checked against the upper bound.
+bug_explanation: pos < start gives a negative idx that passes idx < len.
+entry: window_get
+params:
+  - {name: buf, type: "int[]", len: len}
+  - {name: len, type: int}
+  - {name: pos, type: int}
+  - {name: start, type: int}
+requires: ["1 <= len && len <= 64", "0 <= pos && pos <= 1000", "0 <= start && start <= 1000"]
+witness: {buf: [1, 2, 3], len: 3, pos: 0, start: 1}
+code: |
+  int window_get(const int *buf, int len, int pos, int start) {
+      int idx = pos - start;
+      if (idx < len) {
+          return buf[idx];
+      }
+      return -1;
+  }
+reference_z3: |
+  from z3 import *
+  buf = Array('buf', BitVecSort(32), BitVecSort(32))
+  len_, pos, start = BitVec('len', 32), BitVec('pos', 32), BitVec('start', 32)
+  s = Solver()
+  s.add(1 <= len_, len_ <= 64, 0 <= pos, pos <= 1000, 0 <= start, start <= 1000)
+  sub_bad = Or(Not(BVSubNoOverflow(pos, start)), Not(BVSubNoUnderflow(pos, start, True)))
+  idx = pos - start
+  s.add(Or(sub_bad, And(idx < len_, Or(idx < 0, idx >= len_))))
+---
+id: T2-BND-03-S
+pair: T2-BND-03
+label: safe
+tier: 2
+category: bounds
+twin: code
+tags: [signedness, negative_index]
+description: Uses an unsigned index, so negative differences wrap to huge values and fail the check.
+entry: window_get
+params:
+  - {name: buf, type: "int[]", len: len}
+  - {name: len, type: int}
+  - {name: pos, type: int}
+  - {name: start, type: int}
+requires: ["1 <= len && len <= 64", "0 <= pos && pos <= 1000", "0 <= start && start <= 1000"]
+code: |
+  int window_get(const int *buf, int len, int pos, int start) {
+      unsigned idx = (unsigned)(pos - start);
+      if (idx < (unsigned)len) {
+          return buf[idx];
+      }
+      return -1;
+  }
+reference_z3: |
+  from z3 import *
+  buf = Array('buf', BitVecSort(32), BitVecSort(32))
+  len_, pos, start = BitVec('len', 32), BitVec('pos', 32), BitVec('start', 32)
+  s = Solver()
+  s.add(1 <= len_, len_ <= 64, 0 <= pos, pos <= 1000, 0 <= start, start <= 1000)
+  sub_bad = Or(Not(BVSubNoOverflow(pos, start)), Not(BVSubNoUnderflow(pos, start, True)))
+  idx = pos - start                      # reinterpreted as unsigned
+  s.add(Or(sub_bad, And(ULT(idx, len_), UGE(idx, len_))))
+---
+id: T2-BND-04-U
+pair: T2-BND-04
+label: unsafe
+tier: 2
+category: bounds
+twin: code
+tags: [off_by_one, ring_buffer]
+description: Ring-buffer wrap check uses > instead of ==/>=.
+bug_explanation: head == cap-1 gives next == cap, which is not > cap, so buf[cap] is written.
+entry: ring_push
+params:
+  - {name: buf, type: "int[]", len: cap}
+  - {name: cap, type: int}
+  - {name: head, type: int}
+  - {name: v, type: int}
+requires: ["1 <= cap && cap <= 64", "0 <= head && head < cap"]
+witness: {buf: [0, 0], cap: 2, head: 1, v: 9}
+code: |
+  void ring_push(int *buf, int cap, int head, int v) {
+      int next = head + 1;
+      if (next > cap) {
+          next = 0;
+      }
+      buf[next] = v;
+  }
+reference_z3: |
+  from z3 import *
+  buf = Array('buf', BitVecSort(32), BitVecSort(32))
+  cap, head, v = BitVecs('cap head v', 32)
+  s = Solver()
+  s.add(1 <= cap, cap <= 64, 0 <= head, head < cap)
+  nxt = If(head + 1 > cap, BitVecVal(0, 32), head + 1)
+  s.add(Or(Not(BVAddNoOverflow(head, BitVecVal(1, 32), True)), nxt < 0, nxt >= cap))
+---
+id: T2-BND-04-S
+pair: T2-BND-04
+label: safe
+tier: 2
+category: bounds
+twin: code
+tags: [off_by_one, ring_buffer]
+description: Wraps when next reaches cap.
+entry: ring_push
+params:
+  - {name: buf, type: "int[]", len: cap}
+  - {name: cap, type: int}
+  - {name: head, type: int}
+  - {name: v, type: int}
+requires: ["1 <= cap && cap <= 64", "0 <= head && head < cap"]
+code: |
+  void ring_push(int *buf, int cap, int head, int v) {
+      int next = head + 1;
+      if (next == cap) {
+          next = 0;
+      }
+      buf[next] = v;
+  }
+reference_z3: |
+  from z3 import *
+  buf = Array('buf', BitVecSort(32), BitVecSort(32))
+  cap, head, v = BitVecs('cap head v', 32)
+  s = Solver()
+  s.add(1 <= cap, cap <= 64, 0 <= head, head < cap)
+  nxt = If(head + 1 == cap, BitVecVal(0, 32), head + 1)
+  s.add(Or(Not(BVAddNoOverflow(head, BitVecVal(1, 32), True)), nxt < 0, nxt >= cap))
+---
+id: T2-BND-05-U
+pair: T2-BND-05
+label: unsafe
+tier: 2
+category: bounds
+twin: code
+tags: [empty_input, early_return]
+description: Early return only for negative lengths, not for an empty buffer.
+bug_explanation: len == 0 reads buf[-1].
+entry: last_or_default
+params:
+  - {name: buf, type: "int[]", len: len}
+  - {name: len, type: int}
+  - {name: dflt, type: int}
+requires: ["0 <= len && len <= 64"]
+witness: {buf: [], len: 0, dflt: 3}
+code: |
+  int last_or_default(const int *buf, int len, int dflt) {
+      if (len < 0) {
+          return dflt;
+      }
+      return buf[len - 1];
+  }
+reference_z3: |
+  from z3 import *
+  buf = Array('buf', BitVecSort(32), BitVecSort(32))
+  len_, dflt = BitVec('len', 32), BitVec('dflt', 32)
+  s = Solver()
+  s.add(0 <= len_, len_ <= 64)
+  reach = Not(len_ < 0)
+  idx = len_ - 1
+  s.add(And(reach, Or(Not(BVSubNoUnderflow(len_, BitVecVal(1, 32), True)), idx < 0, idx >= len_)))
+---
+id: T2-BND-05-S
+pair: T2-BND-05
+label: safe
+tier: 2
+category: bounds
+twin: code
+tags: [empty_input, early_return]
+description: Early return covers the empty buffer.
+entry: last_or_default
+params:
+  - {name: buf, type: "int[]", len: len}
+  - {name: len, type: int}
+  - {name: dflt, type: int}
+requires: ["0 <= len && len <= 64"]
+code: |
+  int last_or_default(const int *buf, int len, int dflt) {
+      if (len <= 0) {
+          return dflt;
+      }
+      return buf[len - 1];
+  }
+reference_z3: |
+  from z3 import *
+  buf = Array('buf', BitVecSort(32), BitVecSort(32))
+  len_, dflt = BitVec('len', 32), BitVec('dflt', 32)
+  s = Solver()
+  s.add(0 <= len_, len_ <= 64)
+  reach = Not(len_ <= 0)
+  idx = len_ - 1
+  s.add(And(reach, Or(Not(BVSubNoUnderflow(len_, BitVecVal(1, 32), True)), idx < 0, idx >= len_)))
+---
+id: T2-BND-06-U
+pair: T2-BND-06
+label: unsafe
+tier: 2
+category: bounds
+twin: code
+tags: [dead_code_decoy, path_feasibility]
+description: A special-case branch whose condition is satisfiable (k in 6..8) reads tbl[k + 2].
+bug_explanation: k = 6 takes the special branch and reads tbl[8] of an 8-element table.
+entry: lookup_mode
+params:
+  - {name: tbl, type: "int[]", len: 8}
+  - {name: k, type: int}
+requires: ["-100 <= k && k <= 100"]
+witness: {tbl: [0, 0, 0, 0, 0, 0, 0, 0], k: 6}
+code: |
+  int lookup_mode(const int *tbl, int k) {
+      if (k > 5 && k < 9) {
+          return tbl[k + 2];
+      }
+      if (k >= 0 && k < 8) {
+          return tbl[k];
+      }
+      return 0;
+  }
+reference_z3: |
+  from z3 import *
+  tbl = Array('tbl', BitVecSort(32), BitVecSort(32))
+  k = BitVec('k', 32)
+  s = Solver()
+  s.add(-100 <= k, k <= 100)
+  p1 = And(k > 5, k < 9)
+  p2 = And(Not(p1), k >= 0, k < 8)
+  s.add(Or(And(p1, Or(k + 2 < 0, k + 2 >= 8)),
+           And(p2, Or(k < 0, k >= 8))))
+---
+id: T2-BND-06-S
+pair: T2-BND-06
+label: safe
+tier: 2
+category: bounds
+twin: code
+tags: [dead_code_decoy, path_feasibility]
+description: The suspicious branch is dead code (k > 5 && k < 3 is unsatisfiable).
+entry: lookup_mode
+params:
+  - {name: tbl, type: "int[]", len: 8}
+  - {name: k, type: int}
+requires: ["-100 <= k && k <= 100"]
+code: |
+  int lookup_mode(const int *tbl, int k) {
+      if (k > 5 && k < 3) {
+          return tbl[k + 2];
+      }
+      if (k >= 0 && k < 8) {
+          return tbl[k];
+      }
+      return 0;
+  }
+reference_z3: |
+  from z3 import *
+  tbl = Array('tbl', BitVecSort(32), BitVecSort(32))
+  k = BitVec('k', 32)
+  s = Solver()
+  s.add(-100 <= k, k <= 100)
+  p1 = And(k > 5, k < 3)
+  p2 = And(Not(p1), k >= 0, k < 8)
+  s.add(Or(And(p1, Or(k + 2 < 0, k + 2 >= 8)),
+           And(p2, Or(k < 0, k >= 8))))
+---
+id: T2-DIV-01-U
+pair: T2-DIV-01
+label: unsafe
+tier: 2
+category: div_zero
+twin: code
+tags: [ineffective_guard]
+description: Guards d == 0 but divides by d - 1.
+bug_explanation: d == 1 makes the divisor zero.
+entry: adjusted_ratio
+params:
+  - {name: x, type: int}
+  - {name: d, type: int}
+requires: ["0 <= x && x <= 1000000", "-1000 <= d && d <= 1000"]
+witness: {x: 10, d: 1}
+code: |
+  int adjusted_ratio(int x, int d) {
+      if (d == 0) {
+          return 0;
+      }
+      return x / (d - 1);
+  }
+reference_z3: |
+  from z3 import *
+  x, d = BitVecs('x d', 32)
+  s = Solver()
+  s.add(0 <= x, x <= 1000000, -1000 <= d, d <= 1000)
+  reach = Not(d == 0)
+  dv = d - 1
+  s.add(And(reach, Or(Not(BVSubNoUnderflow(d, BitVecVal(1, 32), True)), dv == 0, Not(BVSDivNoOverflow(x, dv)))))
+---
+id: T2-DIV-01-S
+pair: T2-DIV-01
+label: safe
+tier: 2
+category: div_zero
+twin: code
+tags: [ineffective_guard]
+description: Guards exactly the value that makes the divisor zero.
+entry: adjusted_ratio
+params:
+  - {name: x, type: int}
+  - {name: d, type: int}
+requires: ["0 <= x && x <= 1000000", "-1000 <= d && d <= 1000"]
+code: |
+  int adjusted_ratio(int x, int d) {
+      if (d == 1) {
+          return 0;
+      }
+      return x / (d - 1);
+  }
+reference_z3: |
+  from z3 import *
+  x, d = BitVecs('x d', 32)
+  s = Solver()
+  s.add(0 <= x, x <= 1000000, -1000 <= d, d <= 1000)
+  reach = Not(d == 1)
+  dv = d - 1
+  s.add(And(reach, Or(Not(BVSubNoUnderflow(d, BitVecVal(1, 32), True)), dv == 0, Not(BVSDivNoOverflow(x, dv)))))
+---
+id: T2-DIV-02-U
+pair: T2-DIV-02
+label: unsafe
+tier: 2
+category: div_zero
+twin: code
+tags: [path_condition, boundary]
+description: Nested conditions intended to make y positive, but x >= 10 allows y == 0.
+bug_explanation: x = 10, y = 0 reaches z / y.
+entry: scaled
+params:
+  - {name: x, type: int}
+  - {name: y, type: int}
+  - {name: z, type: int}
+requires: ["-1000 <= x && x <= 1000", "-1000 <= y && y <= 1000", "-1000 <= z && z <= 1000"]
+witness: {x: 10, y: 0, z: 5}
+code: |
+  int scaled(int x, int y, int z) {
+      if (x >= 10) {
+          if (y == x - 10) {
+              return z / y;
+          }
+      }
+      return 0;
+  }
+reference_z3: |
+  from z3 import *
+  x, y, z = BitVecs('x y z', 32)
+  s = Solver()
+  for v in (x, y, z):
+      s.add(-1000 <= v, v <= 1000)
+  p_outer = x >= 10
+  sub_bad = And(p_outer, Not(BVSubNoUnderflow(x, BitVecVal(10, 32), True)))
+  reach = And(p_outer, y == x - 10)
+  s.add(Or(sub_bad, And(reach, Or(y == 0, Not(BVSDivNoOverflow(z, y))))))
+---
+id: T2-DIV-02-S
+pair: T2-DIV-02
+label: safe
+tier: 2
+category: div_zero
+twin: code
+tags: [path_condition, boundary]
+description: x > 10 implies y = x - 10 >= 1 on the dividing path.
+entry: scaled
+params:
+  - {name: x, type: int}
+  - {name: y, type: int}
+  - {name: z, type: int}
+requires: ["-1000 <= x && x <= 1000", "-1000 <= y && y <= 1000", "-1000 <= z && z <= 1000"]
+code: |
+  int scaled(int x, int y, int z) {
+      if (x > 10) {
+          if (y == x - 10) {
+              return z / y;
+          }
+      }
+      return 0;
+  }
+reference_z3: |
+  from z3 import *
+  x, y, z = BitVecs('x y z', 32)
+  s = Solver()
+  for v in (x, y, z):
+      s.add(-1000 <= v, v <= 1000)
+  p_outer = x > 10
+  sub_bad = And(p_outer, Not(BVSubNoUnderflow(x, BitVecVal(10, 32), True)))
+  reach = And(p_outer, y == x - 10)
+  s.add(Or(sub_bad, And(reach, Or(y == 0, Not(BVSDivNoOverflow(z, y))))))
+---
+id: T2-DIV-03-U
+pair: T2-DIV-03
+label: unsafe
+tier: 2
+category: div_zero
+twin: code
+tags: [bitmask, modular_reasoning]
+description: Guard tests divisibility by 8 but the divisor is x mod 4.
+bug_explanation: x = 4 is not divisible by 8, but 4 & 3 == 0.
+entry: quarter_slot
+params:
+  - {name: x, type: int}
+requires: []
+witness: {x: 4}
+code: |
+  int quarter_slot(int x) {
+      if (x % 8 != 0) {
+          return 100 / (x & 3);
+      }
+      return 0;
+  }
+reference_z3: |
+  from z3 import *
+  x = BitVec('x', 32)
+  s = Solver()
+  reach = SRem(x, 8) != 0
+  s.add(And(reach, (x & 3) == 0))
+---
+id: T2-DIV-03-S
+pair: T2-DIV-03
+label: safe
+tier: 2
+category: div_zero
+twin: code
+tags: [bitmask, modular_reasoning]
+description: For two's complement ints, x % 4 != 0 exactly when x & 3 != 0 (also for negative x).
+entry: quarter_slot
+params:
+  - {name: x, type: int}
+requires: []
+code: |
+  int quarter_slot(int x) {
+      if (x % 4 != 0) {
+          return 100 / (x & 3);
+      }
+      return 0;
+  }
+reference_z3: |
+  from z3 import *
+  x = BitVec('x', 32)
+  s = Solver()
+  reach = SRem(x, 4) != 0
+  s.add(And(reach, (x & 3) == 0))
+---
+id: T2-DIV-04-U
+pair: T2-DIV-04
+label: unsafe
+tier: 2
+category: div_zero
+twin: precondition
+tags: [empty_input, counting]
+description: Mean of the positive arguments; all three may be non-positive.
+bug_explanation: a = b = c = 0 leaves cnt == 0.
+entry: mean_of_positive
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+  - {name: c, type: int}
+requires: ["-1000 <= a && a <= 1000", "-1000 <= b && b <= 1000", "-1000 <= c && c <= 1000"]
+witness: {a: 0, b: -5, c: 0}
+code: |
+  int mean_of_positive(int a, int b, int c) {
+      int sum = 0;
+      int cnt = 0;
+      if (a > 0) {
+          sum += a;
+          cnt++;
+      }
+      if (b > 0) {
+          sum += b;
+          cnt++;
+      }
+      if (c > 0) {
+          sum += c;
+          cnt++;
+      }
+      return sum / cnt;
+  }
+reference_z3: |
+  from z3 import *
+  a, b, c = BitVecs('a b c', 32)
+  s = Solver()
+  for v in (a, b, c):
+      s.add(-1000 <= v, v <= 1000)
+  zero, one = BitVecVal(0, 32), BitVecVal(1, 32)
+  cnt = If(a > 0, one, zero) + If(b > 0, one, zero) + If(c > 0, one, zero)
+  sm = If(a > 0, a, zero) + If(b > 0, b, zero) + If(c > 0, c, zero)
+  s.add(Or(cnt == 0, Not(BVSDivNoOverflow(sm, cnt))))
+---
+id: T2-DIV-04-S
+pair: T2-DIV-04
+label: safe
+tier: 2
+category: div_zero
+twin: precondition
+tags: [empty_input, counting]
+description: Same code; at least one argument is positive.
+entry: mean_of_positive
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+  - {name: c, type: int}
+requires: ["-1000 <= a && a <= 1000", "-1000 <= b && b <= 1000", "-1000 <= c && c <= 1000", "a > 0 || b > 0 || c > 0"]
+code_from: T2-DIV-04-U
+reference_z3: |
+  from z3 import *
+  a, b, c = BitVecs('a b c', 32)
+  s = Solver()
+  for v in (a, b, c):
+      s.add(-1000 <= v, v <= 1000)
+  s.add(Or(a > 0, b > 0, c > 0))
+  zero, one = BitVecVal(0, 32), BitVecVal(1, 32)
+  cnt = If(a > 0, one, zero) + If(b > 0, one, zero) + If(c > 0, one, zero)
+  sm = If(a > 0, a, zero) + If(b > 0, b, zero) + If(c > 0, c, zero)
+  s.add(Or(cnt == 0, Not(BVSDivNoOverflow(sm, cnt))))
+---
+id: T2-OVF-01-U
+pair: T2-OVF-01
+label: unsafe
+tier: 2
+category: overflow
+twin: code
+tags: [broken_overflow_check, cert_int32]
+description: Overflow check that itself overflows (a + b < a).
+bug_explanation: a = INT_MAX, b = 1 overflows inside the guard.
+entry: checked_add
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+requires: ["b >= 0"]
+witness: {a: 2147483647, b: 1}
+code: |
+  int checked_add(int a, int b) {
+      if (a + b < a) {
+          return -1;
+      }
+      return a + b;
+  }
+reference_z3: |
+  from z3 import *
+  a, b = BitVecs('a b', 32)
+  s = Solver()
+  s.add(b >= 0)
+  s.add(Or(Not(BVAddNoOverflow(a, b, True)), Not(BVAddNoUnderflow(a, b))))
+---
+id: T2-OVF-01-S
+pair: T2-OVF-01
+label: safe
+tier: 2
+category: overflow
+twin: code
+tags: [broken_overflow_check, cert_int32]
+description: Precondition-style check a > INT_MAX - b (safe for b >= 0).
+entry: checked_add
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+requires: ["b >= 0"]
+code: |
+  #include <limits.h>
+
+  int checked_add(int a, int b) {
+      if (a > INT_MAX - b) {
+          return -1;
+      }
+      return a + b;
+  }
+reference_z3: |
+  from z3 import *
+  a, b = BitVecs('a b', 32)
+  s = Solver()
+  s.add(b >= 0)
+  INT_MAX = BitVecVal(2**31 - 1, 32)
+  guard_bad = Or(Not(BVSubNoOverflow(INT_MAX, b)), Not(BVSubNoUnderflow(INT_MAX, b, True)))
+  reach = Not(a > INT_MAX - b)
+  s.add(Or(guard_bad, And(reach, Or(Not(BVAddNoOverflow(a, b, True)), Not(BVAddNoUnderflow(a, b))))))
+---
+id: T2-OVF-02-U
+pair: T2-OVF-02
+label: unsafe
+tier: 2
+category: overflow
+twin: code
+tags: [saturating_arith, missing_case]
+description: Saturating add that only handles positive overflow.
+bug_explanation: a = INT_MIN, b = -1 underflows.
+entry: sat_add
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+requires: []
+witness: {a: -2147483648, b: -1}
+code: |
+  #include <limits.h>
+
+  int sat_add(int a, int b) {
+      if (b > 0 && a > INT_MAX - b) {
+          return INT_MAX;
+      }
+      return a + b;
+  }
+reference_z3: |
+  from z3 import *
+  a, b = BitVecs('a b', 32)
+  s = Solver()
+  INT_MAX = BitVecVal(2**31 - 1, 32)
+  g1_eval = b > 0                       # && short-circuits: INT_MAX - b only when b > 0
+  g1_bad = And(g1_eval, Or(Not(BVSubNoOverflow(INT_MAX, b)), Not(BVSubNoUnderflow(INT_MAX, b, True))))
+  reach = Not(And(b > 0, a > INT_MAX - b))
+  s.add(Or(g1_bad, And(reach, Or(Not(BVAddNoOverflow(a, b, True)), Not(BVAddNoUnderflow(a, b))))))
+---
+id: T2-OVF-02-S
+pair: T2-OVF-02
+label: safe
+tier: 2
+category: overflow
+twin: code
+tags: [saturating_arith, missing_case]
+description: Saturating add handling both directions.
+entry: sat_add
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+requires: []
+code: |
+  #include <limits.h>
+
+  int sat_add(int a, int b) {
+      if (b > 0 && a > INT_MAX - b) {
+          return INT_MAX;
+      }
+      if (b < 0 && a < INT_MIN - b) {
+          return INT_MIN;
+      }
+      return a + b;
+  }
+reference_z3: |
+  from z3 import *
+  a, b = BitVecs('a b', 32)
+  s = Solver()
+  INT_MAX = BitVecVal(2**31 - 1, 32)
+  INT_MIN = BitVecVal(-2**31, 32)
+  g1_bad = And(b > 0, Or(Not(BVSubNoOverflow(INT_MAX, b)), Not(BVSubNoUnderflow(INT_MAX, b, True))))
+  c1 = And(b > 0, a > INT_MAX - b)
+  g2_bad = And(Not(c1), b < 0, Or(Not(BVSubNoOverflow(INT_MIN, b)), Not(BVSubNoUnderflow(INT_MIN, b, True))))
+  c2 = And(b < 0, a < INT_MIN - b)
+  reach = And(Not(c1), Not(c2))
+  s.add(Or(g1_bad, g2_bad, And(reach, Or(Not(BVAddNoOverflow(a, b, True)), Not(BVAddNoUnderflow(a, b))))))
+---
+id: T2-OVF-03-U
+pair: T2-OVF-03
+label: unsafe
+tier: 2
+category: overflow
+twin: precondition
+tags: [abs_diff]
+description: Absolute difference of two unconstrained ints.
+bug_explanation: a = INT_MAX, b = -1 makes a - b overflow.
+entry: abs_diff
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+requires: []
+witness: {a: 2147483647, b: -1}
+code: |
+  int abs_diff(int a, int b) {
+      if (a > b) {
+          return a - b;
+      }
+      return b - a;
+  }
+reference_z3: |
+  from z3 import *
+  a, b = BitVecs('a b', 32)
+  s = Solver()
+  s.add(Or(And(a > b, Or(Not(BVSubNoOverflow(a, b)), Not(BVSubNoUnderflow(a, b, True)))),
+           And(Not(a > b), Or(Not(BVSubNoOverflow(b, a)), Not(BVSubNoUnderflow(b, a, True))))))
+---
+id: T2-OVF-03-S
+pair: T2-OVF-03
+label: safe
+tier: 2
+category: overflow
+twin: precondition
+tags: [abs_diff]
+description: Same code; inputs within +-1e9 so the difference is at most 2e9 < INT_MAX.
+entry: abs_diff
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+requires: ["-1000000000 <= a && a <= 1000000000", "-1000000000 <= b && b <= 1000000000"]
+code_from: T2-OVF-03-U
+reference_z3: |
+  from z3 import *
+  a, b = BitVecs('a b', 32)
+  s = Solver()
+  s.add(-1000000000 <= a, a <= 1000000000, -1000000000 <= b, b <= 1000000000)
+  s.add(Or(And(a > b, Or(Not(BVSubNoOverflow(a, b)), Not(BVSubNoUnderflow(a, b, True)))),
+           And(Not(a > b), Or(Not(BVSubNoOverflow(b, a)), Not(BVSubNoUnderflow(b, a, True))))))
+---
+id: T2-OVF-04-U
+pair: T2-OVF-04
+label: unsafe
+tier: 2
+category: overflow
+twin: code
+tags: [percentage, intermediate_overflow]
+description: part * 100 computed in int although the final percentage is small.
+bug_explanation: part = total = 30000000 makes part * 100 overflow.
+entry: percent
+params:
+  - {name: part, type: int}
+  - {name: total, type: int}
+requires: ["0 <= part && part <= total"]
+witness: {part: 30000000, total: 30000000}
+code: |
+  int percent(int part, int total) {
+      if (total <= 0) {
+          return 0;
+      }
+      return part * 100 / total;
+  }
+reference_z3: |
+  from z3 import *
+  part, total = BitVecs('part total', 32)
+  s = Solver()
+  s.add(0 <= part, part <= total)
+  reach = Not(total <= 0)
+  k = BitVecVal(100, 32)
+  p = part * k
+  s.add(And(reach, Or(Not(BVMulNoOverflow(part, k, True)), Not(BVMulNoUnderflow(part, k)),
+                      total == 0, Not(BVSDivNoOverflow(p, total)))))
+---
+id: T2-OVF-04-S
+pair: T2-OVF-04
+label: safe
+tier: 2
+category: overflow
+twin: code
+tags: [percentage, intermediate_overflow]
+description: Computes the product in 64 bits; the quotient is at most 100.
+entry: percent
+params:
+  - {name: part, type: int}
+  - {name: total, type: int}
+requires: ["0 <= part && part <= total"]
+code: |
+  int percent(int part, int total) {
+      if (total <= 0) {
+          return 0;
+      }
+      return (int)((long long)part * 100 / total);
+  }
+reference_z3: |
+  from z3 import *
+  part, total = BitVecs('part total', 32)
+  s = Solver()
+  s.add(0 <= part, part <= total)
+  reach = Not(total <= 0)
+  wp, wt = SignExt(32, part), SignExt(32, total)
+  k = BitVecVal(100, 64)
+  p = wp * k
+  s.add(And(reach, Or(Not(BVMulNoOverflow(wp, k, True)), Not(BVMulNoUnderflow(wp, k)),
+                      wt == 0, Not(BVSDivNoOverflow(p, wt)))))
+---
+id: T2-OVF-05-U
+pair: T2-OVF-05
+label: unsafe
+tier: 2
+category: overflow
+twin: code
+tags: [clamp, int_min_negation, wrong_comparison]
+description: Intended to clamp x from below at lo, but the comparison is reversed.
+bug_explanation: x = INT_MIN is never raised to lo, so -x overflows.
+entry: neg_clamped
+params:
+  - {name: x, type: int}
+  - {name: lo, type: int}
+requires: ["-100 <= lo && lo <= 100"]
+witness: {x: -2147483648, lo: 0}
+code: |
+  int neg_clamped(int x, int lo) {
+      if (x > lo) {
+          x = lo;
+      }
+      return -x;
+  }
+reference_z3: |
+  from z3 import *
+  x, lo = BitVecs('x lo', 32)
+  s = Solver()
+  s.add(-100 <= lo, lo <= 100)
+  x1 = If(x > lo, lo, x)
+  s.add(Not(BVSNegNoOverflow(x1)))
+---
+id: T2-OVF-05-S
+pair: T2-OVF-05
+label: safe
+tier: 2
+category: overflow
+twin: code
+tags: [clamp, int_min_negation, wrong_comparison]
+description: Clamps from below, so x >= lo >= -100 before negation.
+entry: neg_clamped
+params:
+  - {name: x, type: int}
+  - {name: lo, type: int}
+requires: ["-100 <= lo && lo <= 100"]
+code: |
+  int neg_clamped(int x, int lo) {
+      if (x < lo) {
+          x = lo;
+      }
+      return -x;
+  }
+reference_z3: |
+  from z3 import *
+  x, lo = BitVecs('x lo', 32)
+  s = Solver()
+  s.add(-100 <= lo, lo <= 100)
+  x1 = If(x < lo, lo, x)
+  s.add(Not(BVSNegNoOverflow(x1)))
+---
+id: T2-OVF-06-U
+pair: T2-OVF-06
+label: unsafe
+tier: 2
+category: overflow
+twin: precondition
+tags: [mode_flag, disjunctive_precondition]
+description: Narrow (int) multiply path taken when wide == 0, with operands up to 1e5.
+bug_explanation: wide = 0, a = b = 100000 overflows a * b.
+entry: widen_mul
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+  - {name: wide, type: int}
+requires: ["-100000 <= a && a <= 100000", "-100000 <= b && b <= 100000"]
+witness: {a: 100000, b: 100000, wide: 0}
+code: |
+  long long widen_mul(int a, int b, int wide) {
+      if (wide) {
+          return (long long)a * b;
+      }
+      return a * b;
+  }
+reference_z3: |
+  from z3 import *
+  a, b, wide = BitVecs('a b wide', 32)
+  s = Solver()
+  s.add(-100000 <= a, a <= 100000, -100000 <= b, b <= 100000)
+  narrow = wide == 0
+  s.add(And(narrow, Or(Not(BVMulNoOverflow(a, b, True)), Not(BVMulNoUnderflow(a, b)))))
+---
+id: T2-OVF-06-S
+pair: T2-OVF-06
+label: safe
+tier: 2
+category: overflow
+twin: precondition
+tags: [mode_flag, disjunctive_precondition]
+description: Same code; the precondition only allows the narrow path for operands within +-40000.
+entry: widen_mul
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+  - {name: wide, type: int}
+requires: ["-100000 <= a && a <= 100000", "-100000 <= b && b <= 100000", "wide != 0 || (-40000 <= a && a <= 40000 && -40000 <= b && b <= 40000)"]
+code_from: T2-OVF-06-U
+reference_z3: |
+  from z3 import *
+  a, b, wide = BitVecs('a b wide', 32)
+  s = Solver()
+  s.add(-100000 <= a, a <= 100000, -100000 <= b, b <= 100000)
+  s.add(Or(wide != 0, And(-40000 <= a, a <= 40000, -40000 <= b, b <= 40000)))
+  narrow = wide == 0
+  s.add(And(narrow, Or(Not(BVMulNoOverflow(a, b, True)), Not(BVMulNoUnderflow(a, b)))))
+---
+id: T2-SHF-01-U
+pair: T2-SHF-01
+label: unsafe
+tier: 2
+category: shift
+twin: code
+tags: [off_by_one, full_width_shift]
+description: Shift-amount guard rejects k > 32 but lets k == 32 through.
+bug_explanation: k = 32 shifts a 32-bit value by its width.
+entry: shl_or_zero
+params:
+  - {name: x, type: unsigned}
+  - {name: k, type: int}
+requires: []
+witness: {x: 1, k: 32}
+code: |
+  unsigned shl_or_zero(unsigned x, int k) {
+      if (k > 32 || k < 0) {
+          return 0u;
+      }
+      return x << k;
+  }
+reference_z3: |
+  from z3 import *
+  x, k = BitVecs('x k', 32)
+  s = Solver()
+  reach = Not(Or(k > 32, k < 0))
+  s.add(And(reach, Or(k < 0, k >= 32)))
+---
+id: T2-SHF-01-S
+pair: T2-SHF-01
+label: safe
+tier: 2
+category: shift
+twin: code
+tags: [off_by_one, full_width_shift]
+description: Guard rejects k >= 32.
+entry: shl_or_zero
+params:
+  - {name: x, type: unsigned}
+  - {name: k, type: int}
+requires: []
+code: |
+  unsigned shl_or_zero(unsigned x, int k) {
+      if (k >= 32 || k < 0) {
+          return 0u;
+      }
+      return x << k;
+  }
+reference_z3: |
+  from z3 import *
+  x, k = BitVecs('x k', 32)
+  s = Solver()
+  reach = Not(Or(k >= 32, k < 0))
+  s.add(And(reach, Or(k < 0, k >= 32)))
+---
+id: T2-SHF-02-U
+pair: T2-SHF-02
+label: unsafe
+tier: 2
+category: shift
+twin: code
+tags: [sign_bit_shift, bitfield]
+description: Bit-field extraction building the mask with a signed 1 << width.
+bug_explanation: width = 31 evaluates 1 << 31, not representable in int.
+entry: get_field
+params:
+  - {name: word, type: int}
+  - {name: pos, type: int}
+  - {name: width, type: int}
+requires: ["0 <= pos && pos <= 31", "1 <= width && width <= 32"]
+witness: {word: 0, pos: 0, width: 31}
+code: |
+  int get_field(int word, int pos, int width) {
+      if (width >= 32) {
+          return word;
+      }
+      return (word >> pos) & ((1 << width) - 1);
+  }
+reference_z3: |
+  from z3 import *
+  word, pos, width = BitVecs('word pos width', 32)
+  s = Solver()
+  s.add(0 <= pos, pos <= 31, 1 <= width, width <= 32)
+  reach = Not(width >= 32)
+  INT_MAX = BitVecVal(2**31 - 1, 32)
+  one = BitVecVal(1, 32)
+  shr_bad = Or(pos < 0, pos >= 32)
+  shl_bad = Or(width < 0, width >= 32, one > (INT_MAX >> width))
+  m = one << width
+  sub_bad = And(Not(shl_bad), Not(BVSubNoUnderflow(m, one, True)))
+  s.add(And(reach, Or(shr_bad, shl_bad, sub_bad)))
+---
+id: T2-SHF-02-S
+pair: T2-SHF-02
+label: safe
+tier: 2
+category: shift
+twin: code
+tags: [sign_bit_shift, bitfield]
+description: Builds the mask and shifts in unsigned arithmetic.
+entry: get_field
+params:
+  - {name: word, type: int}
+  - {name: pos, type: int}
+  - {name: width, type: int}
+requires: ["0 <= pos && pos <= 31", "1 <= width && width <= 32"]
+code: |
+  int get_field(int word, int pos, int width) {
+      if (width >= 32) {
+          return word;
+      }
+      return (int)(((unsigned)word >> pos) & ((1u << width) - 1u));
+  }
+reference_z3: |
+  from z3 import *
+  word, pos, width = BitVecs('word pos width', 32)
+  s = Solver()
+  s.add(0 <= pos, pos <= 31, 1 <= width, width <= 32)
+  reach = Not(width >= 32)
+  s.add(And(reach, Or(pos < 0, pos >= 32, width < 0, width >= 32)))
+---
+id: T2-SHF-03-U
+pair: T2-SHF-03
+label: unsafe
+tier: 2
+category: shift
+twin: precondition
+tags: [negative_left_shift]
+description: Left shift of a value that may be negative.
+bug_explanation: x = -1, e = 1 left-shifts a negative value.
+entry: scale_pow2
+params:
+  - {name: x, type: int}
+  - {name: e, type: int}
+requires: ["-1000 <= x && x <= 1000", "e <= 20"]
+witness: {x: -1, e: 1}
+code: |
+  int scale_pow2(int x, int e) {
+      if (e <= 0) {
+          return x;
+      }
+      return x << e;
+  }
+reference_z3: |
+  from z3 import *
+  x, e = BitVecs('x e', 32)
+  s = Solver()
+  s.add(-1000 <= x, x <= 1000, e <= 20)
+  reach = Not(e <= 0)
+  INT_MAX = BitVecVal(2**31 - 1, 32)
+  s.add(And(reach, Or(e < 0, e >= 32, x < 0, x > (INT_MAX >> e))))
+---
+id: T2-SHF-03-S
+pair: T2-SHF-03
+label: safe
+tier: 2
+category: shift
+twin: precondition
+tags: [negative_left_shift]
+description: Same code; x non-negative and 1000 << 20 < 2^31.
+entry: scale_pow2
+params:
+  - {name: x, type: int}
+  - {name: e, type: int}
+requires: ["0 <= x && x <= 1000", "e <= 20"]
+code_from: T2-SHF-03-U
+reference_z3: |
+  from z3 import *
+  x, e = BitVecs('x e', 32)
+  s = Solver()
+  s.add(0 <= x, x <= 1000, e <= 20)
+  reach = Not(e <= 0)
+  INT_MAX = BitVecVal(2**31 - 1, 32)
+  s.add(And(reach, Or(e < 0, e >= 32, x < 0, x > (INT_MAX >> e))))

@@ -1,0 +1,32 @@
+[project]
+name = "invcheck"
+version = "0.1.0"
+description = "CS3263 project: LLM direct review vs LLM-to-Z3 translation for C safety-invariant verification"
+requires-python = ">=3.10"
+dependencies = [
+  "z3-solver>=4.12",
+  "requests",
+  "pyyaml",
+  "pandas",
+  "numpy",
+  "scipy",
+  "matplotlib",
+  "tabulate",
+  "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "slow: runs many subprocesses (CBMC, full witness sweeps); deselect with -m \"not slow\"",
+]

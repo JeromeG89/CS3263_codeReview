@@ -1,0 +1,732 @@
+# Tier 4: inter-procedural code (helpers that must be inlined), nested loops, data-dependent control flow.
+---
+id: T4-BND-01-U
+pair: T4-BND-01
+label: unsafe
+tier: 4
+category: bounds
+twin: code
+tags: [helper_function, clamp, off_by_one]
+description: Index clamped with a helper to [0, n] instead of [0, n-1].
+bug_explanation: pos >= n is clamped to n, reading a[n].
+entry: sample
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: pos, type: int}
+requires: ["1 <= n && n <= 64"]
+witness: {a: [1, 2], n: 2, pos: 9}
+code: |
+  static int clamp(int v, int lo, int hi) {
+      if (v < lo) {
+          return lo;
+      }
+      if (v > hi) {
+          return hi;
+      }
+      return v;
+  }
+
+  int sample(const int *a, int n, int pos) {
+      return a[clamp(pos, 0, n)];
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n, pos = BitVecs('n pos', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 64)
+  def clamp(v, lo, hi):
+      return If(v < lo, lo, If(v > hi, hi, v))
+  idx = clamp(pos, BitVecVal(0, 32), n)
+  s.add(Or(idx < 0, idx >= n))
+---
+id: T4-BND-01-S
+pair: T4-BND-01
+label: safe
+tier: 4
+category: bounds
+twin: code
+tags: [helper_function, clamp, off_by_one]
+description: Index clamped to [0, n-1].
+entry: sample
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: pos, type: int}
+requires: ["1 <= n && n <= 64"]
+code: |
+  static int clamp(int v, int lo, int hi) {
+      if (v < lo) {
+          return lo;
+      }
+      if (v > hi) {
+          return hi;
+      }
+      return v;
+  }
+
+  int sample(const int *a, int n, int pos) {
+      return a[clamp(pos, 0, n - 1)];
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n, pos = BitVecs('n pos', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 64)
+  def clamp(v, lo, hi):
+      return If(v < lo, lo, If(v > hi, hi, v))
+  sub_bad = Not(BVSubNoUnderflow(n, BitVecVal(1, 32), True))
+  idx = clamp(pos, BitVecVal(0, 32), n - 1)
+  s.add(Or(sub_bad, idx < 0, idx >= n))
+---
+id: T4-DIV-01-U
+pair: T4-DIV-01
+label: unsafe
+tier: 4
+category: div_zero
+twin: code
+tags: [helper_function, sentinel_value]
+description: safe_div returns 0 as a sentinel, and the caller then divides by that result.
+bug_explanation: total < parts (or parts == 0) makes per == 0, and x / per divides by zero.
+entry: normalize
+params:
+  - {name: x, type: int}
+  - {name: total, type: int}
+  - {name: parts, type: int}
+requires: ["0 <= x && x <= 1000", "0 <= total && total <= 1000", "0 <= parts && parts <= 10"]
+witness: {x: 1, total: 0, parts: 5}
+code: |
+  static int safe_div(int a, int b) {
+      if (b == 0) {
+          return 0;
+      }
+      return a / b;
+  }
+
+  int normalize(int x, int total, int parts) {
+      int per = safe_div(total, parts);
+      return x / per;
+  }
+reference_z3: |
+  from z3 import *
+  x, total, parts = BitVecs('x total parts', 32)
+  s = Solver()
+  s.add(0 <= x, x <= 1000, 0 <= total, total <= 1000, 0 <= parts, parts <= 10)
+  v1 = And(parts != 0, Not(BVSDivNoOverflow(total, parts)))
+  per = If(parts == 0, BitVecVal(0, 32), total / parts)
+  v2 = Or(per == 0, Not(BVSDivNoOverflow(x, per)))
+  s.add(Or(v1, v2))
+---
+id: T4-DIV-01-S
+pair: T4-DIV-01
+label: safe
+tier: 4
+category: div_zero
+twin: code
+tags: [helper_function, sentinel_value]
+description: The caller checks for the sentinel before dividing.
+entry: normalize
+params:
+  - {name: x, type: int}
+  - {name: total, type: int}
+  - {name: parts, type: int}
+requires: ["0 <= x && x <= 1000", "0 <= total && total <= 1000", "0 <= parts && parts <= 10"]
+code: |
+  static int safe_div(int a, int b) {
+      if (b == 0) {
+          return 0;
+      }
+      return a / b;
+  }
+
+  int normalize(int x, int total, int parts) {
+      int per = safe_div(total, parts);
+      if (per == 0) {
+          return 0;
+      }
+      return x / per;
+  }
+reference_z3: |
+  from z3 import *
+  x, total, parts = BitVecs('x total parts', 32)
+  s = Solver()
+  s.add(0 <= x, x <= 1000, 0 <= total, total <= 1000, 0 <= parts, parts <= 10)
+  v1 = And(parts != 0, Not(BVSDivNoOverflow(total, parts)))
+  per = If(parts == 0, BitVecVal(0, 32), total / parts)
+  v2 = And(per != 0, Or(per == 0, Not(BVSDivNoOverflow(x, per))))
+  s.add(Or(v1, v2))
+---
+id: T4-BND-02-U
+pair: T4-BND-02
+label: unsafe
+tier: 4
+category: bounds
+twin: code
+tags: [nested_loops, triangular_storage, off_by_one]
+description: Sum over packed lower-triangular storage; inner loop runs to i + 1.
+bug_explanation: In the last row the inner loop reads one element past n*(n+1)/2.
+entry: tri_sum
+params:
+  - {name: tri, type: "int[]", len: "n * (n + 1) / 2"}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 6"]
+elem_requires: {tri: "-1000 <= _ && _ <= 1000"}
+witness: {tri: [4], n: 1}
+unwind: 10
+code: |
+  int tri_sum(const int *tri, int n) {
+      int s = 0;
+      for (int i = 0; i < n; i++) {
+          for (int j = 0; j <= i + 1; j++) {
+              s += tri[i * (i + 1) / 2 + j];
+          }
+      }
+      return s;
+  }
+reference_z3: |
+  from z3 import *
+  tri = Array('tri', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 6)
+  L = n * (n + 1) / 2
+  acc, viol = BitVecVal(0, 32), []
+  for ti in range(6):
+      i = BitVecVal(ti, 32)
+      run_i = i < n
+      for tj in range(ti + 2):             # j = 0 .. i+1
+          j = BitVecVal(tj, 32)
+          idx = i * (i + 1) / 2 + j
+          e = tri[idx]
+          s.add(Implies(And(0 <= idx, idx < L), And(-1000 <= e, e <= 1000)))
+          viol.append(And(run_i, Or(idx < 0, idx >= L)))
+          viol.append(And(run_i, Or(Not(BVAddNoOverflow(acc, e, True)), Not(BVAddNoUnderflow(acc, e)))))
+          acc = If(run_i, acc + e, acc)
+  s.add(Or(viol))
+---
+id: T4-BND-02-S
+pair: T4-BND-02
+label: safe
+tier: 4
+category: bounds
+twin: code
+tags: [nested_loops, triangular_storage, off_by_one]
+description: Inner loop runs to i, covering exactly n*(n+1)/2 elements.
+entry: tri_sum
+params:
+  - {name: tri, type: "int[]", len: "n * (n + 1) / 2"}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 6"]
+elem_requires: {tri: "-1000 <= _ && _ <= 1000"}
+unwind: 10
+code: |
+  int tri_sum(const int *tri, int n) {
+      int s = 0;
+      for (int i = 0; i < n; i++) {
+          for (int j = 0; j <= i; j++) {
+              s += tri[i * (i + 1) / 2 + j];
+          }
+      }
+      return s;
+  }
+reference_z3: |
+  from z3 import *
+  tri = Array('tri', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 6)
+  L = n * (n + 1) / 2
+  acc, viol = BitVecVal(0, 32), []
+  for ti in range(6):
+      i = BitVecVal(ti, 32)
+      run_i = i < n
+      for tj in range(ti + 1):             # j = 0 .. i
+          j = BitVecVal(tj, 32)
+          idx = i * (i + 1) / 2 + j
+          e = tri[idx]
+          s.add(Implies(And(0 <= idx, idx < L), And(-1000 <= e, e <= 1000)))
+          viol.append(And(run_i, Or(idx < 0, idx >= L)))
+          viol.append(And(run_i, Or(Not(BVAddNoOverflow(acc, e, True)), Not(BVAddNoUnderflow(acc, e)))))
+          acc = If(run_i, acc + e, acc)
+  s.add(Or(viol))
+---
+id: T4-OVF-01-U
+pair: T4-OVF-01
+label: unsafe
+tier: 4
+category: overflow
+twin: code
+tags: [helper_function, fixed_point]
+description: 16.16 fixed-point linear interpolation; the helper multiplies in 32 bits.
+bug_explanation: (b - a) * t can reach 65536 * 65536 = 2^32.
+entry: fx_lerp
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+  - {name: t, type: int}
+requires: ["-32768 <= a && a <= 32768", "-32768 <= b && b <= 32768", "0 <= t && t <= 65536"]
+witness: {a: -32768, b: 32768, t: 65536}
+code: |
+  static int fx_mul(int a, int b) {
+      return (a * b) >> 16;
+  }
+
+  int fx_lerp(int a, int b, int t) {
+      return a + fx_mul(b - a, t);
+  }
+reference_z3: |
+  from z3 import *
+  a, b, t = BitVecs('a b t', 32)
+  s = Solver()
+  s.add(-32768 <= a, a <= 32768, -32768 <= b, b <= 32768, 0 <= t, t <= 65536)
+  d = b - a
+  sub_bad = Or(Not(BVSubNoOverflow(b, a)), Not(BVSubNoUnderflow(b, a, True)))
+  mul_bad = Or(Not(BVMulNoOverflow(d, t, True)), Not(BVMulNoUnderflow(d, t)))
+  r = (d * t) >> 16
+  add_bad = Or(Not(BVAddNoOverflow(a, r, True)), Not(BVAddNoUnderflow(a, r)))
+  s.add(Or(sub_bad, mul_bad, add_bad))
+---
+id: T4-OVF-01-S
+pair: T4-OVF-01
+label: safe
+tier: 4
+category: overflow
+twin: code
+tags: [helper_function, fixed_point]
+description: The helper multiplies in 64 bits; the shifted result fits in int.
+entry: fx_lerp
+params:
+  - {name: a, type: int}
+  - {name: b, type: int}
+  - {name: t, type: int}
+requires: ["-32768 <= a && a <= 32768", "-32768 <= b && b <= 32768", "0 <= t && t <= 65536"]
+code: |
+  static int fx_mul(int a, int b) {
+      return (int)(((long long)a * b) >> 16);
+  }
+
+  int fx_lerp(int a, int b, int t) {
+      return a + fx_mul(b - a, t);
+  }
+reference_z3: |
+  from z3 import *
+  a, b, t = BitVecs('a b t', 32)
+  s = Solver()
+  s.add(-32768 <= a, a <= 32768, -32768 <= b, b <= 32768, 0 <= t, t <= 65536)
+  d = b - a
+  sub_bad = Or(Not(BVSubNoOverflow(b, a)), Not(BVSubNoUnderflow(b, a, True)))
+  wd, wt = SignExt(32, d), SignExt(32, t)
+  mul_bad = Or(Not(BVMulNoOverflow(wd, wt, True)), Not(BVMulNoUnderflow(wd, wt)))
+  r = Extract(31, 0, (wd * wt) >> 16)      # (int) conversion: value fits, see add check
+  add_bad = Or(Not(BVAddNoOverflow(a, r, True)), Not(BVAddNoUnderflow(a, r)))
+  s.add(Or(sub_bad, mul_bad, add_bad))
+---
+id: T4-OVF-02-U
+pair: T4-OVF-02
+label: unsafe
+tier: 4
+category: overflow
+twin: precondition
+tags: [helper_function, accumulation, numeric_boundary]
+description: Weighted sum with power-of-two weights from a helper; elements up to 1e7.
+bug_explanation: Eight elements of 1e7 give 1e7 * 255 = 2.55e9 > INT_MAX.
+entry: weighted_sum
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 8"]
+elem_requires: {a: "-10000000 <= _ && _ <= 10000000"}
+witness: {a: [10000000, 10000000, 10000000, 10000000, 10000000, 10000000, 10000000, 10000000], n: 8}
+unwind: 12
+code: |
+  static int weight(int i) {
+      return 1 << i;
+  }
+
+  int weighted_sum(const int *a, int n) {
+      int s = 0;
+      for (int i = 0; i < n; i++) {
+          s += a[i] * weight(i);
+      }
+      return s;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8)
+  acc, viol = BitVecVal(0, 32), []
+  for t in range(8):
+      i = BitVecVal(t, 32)
+      run = i < n
+      e = a[i]
+      s.add(Implies(And(0 <= i, i < n), And(-10000000 <= e, e <= 10000000)))
+      viol.append(And(run, Or(i < 0, i >= n)))
+      w = BitVecVal(1 << t, 32)            # weight(i) = 1 << i with i in [0, 7]: shift is valid
+      viol.append(And(run, Or(Not(BVMulNoOverflow(e, w, True)), Not(BVMulNoUnderflow(e, w)))))
+      p = e * w
+      viol.append(And(run, Or(Not(BVAddNoOverflow(acc, p, True)), Not(BVAddNoUnderflow(acc, p)))))
+      acc = If(run, acc + p, acc)
+  s.add(Or(viol))
+---
+id: T4-OVF-02-S
+pair: T4-OVF-02
+label: safe
+tier: 4
+category: overflow
+twin: precondition
+tags: [helper_function, accumulation, numeric_boundary]
+description: Same code; elements up to 8e6, so |sum| <= 8e6 * 255 = 2.04e9 < INT_MAX.
+entry: weighted_sum
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 8"]
+elem_requires: {a: "-8000000 <= _ && _ <= 8000000"}
+unwind: 12
+code_from: T4-OVF-02-U
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 8)
+  acc, viol = BitVecVal(0, 32), []
+  for t in range(8):
+      i = BitVecVal(t, 32)
+      run = i < n
+      e = a[i]
+      s.add(Implies(And(0 <= i, i < n), And(-8000000 <= e, e <= 8000000)))
+      viol.append(And(run, Or(i < 0, i >= n)))
+      w = BitVecVal(1 << t, 32)
+      viol.append(And(run, Or(Not(BVMulNoOverflow(e, w, True)), Not(BVMulNoUnderflow(e, w)))))
+      p = e * w
+      viol.append(And(run, Or(Not(BVAddNoOverflow(acc, p, True)), Not(BVAddNoUnderflow(acc, p)))))
+      acc = If(run, acc + p, acc)
+  s.add(Or(viol))
+---
+id: T4-SHF-01-U
+pair: T4-SHF-01
+label: unsafe
+tier: 4
+category: shift
+twin: precondition
+tags: [helper_function, negative_modulo, semantics_trap]
+description: Bitset range count; lo may be negative, and C's i % 32 is then negative.
+bug_explanation: i = -1 gives i % 32 == -1, a negative shift amount inside test_bit.
+entry: count_set
+params:
+  - {name: words, type: "unsigned[]", len: nwords}
+  - {name: nwords, type: int}
+  - {name: lo, type: int}
+  - {name: hi, type: int}
+requires: ["1 <= nwords && nwords <= 2", "-8 <= lo && lo <= hi", "hi <= nwords * 32"]
+witness: {words: [0], nwords: 1, lo: -1, hi: 0}
+unwind: 75
+code: |
+  static int test_bit(const unsigned *words, int i) {
+      return (int)((words[i / 32] >> (i % 32)) & 1u);
+  }
+
+  int count_set(const unsigned *words, int nwords, int lo, int hi) {
+      int c = 0;
+      for (int i = lo; i < hi; i++) {
+          c += test_bit(words, i);
+      }
+      return c;
+  }
+reference_z3: |
+  from z3 import *
+  words = Array('words', BitVecSort(32), BitVecSort(32))
+  nwords, lo, hi = BitVecs('nwords lo hi', 32)
+  s = Solver()
+  s.add(1 <= nwords, nwords <= 2, -8 <= lo, lo <= hi, hi <= nwords * 32)
+  viol = []
+  for t in range(72):                      # hi - lo <= 72
+      i = lo + t
+      run = i < hi
+      q, r = i / 32, SRem(i, 32)
+      viol.append(And(run, Or(q < 0, q >= nwords, r < 0, r >= 32)))
+  s.add(Or(viol))
+---
+id: T4-SHF-01-S
+pair: T4-SHF-01
+label: safe
+tier: 4
+category: shift
+twin: precondition
+tags: [helper_function, negative_modulo, semantics_trap]
+description: Same code; lo >= 0 so the word index and bit offset are always valid.
+entry: count_set
+params:
+  - {name: words, type: "unsigned[]", len: nwords}
+  - {name: nwords, type: int}
+  - {name: lo, type: int}
+  - {name: hi, type: int}
+requires: ["1 <= nwords && nwords <= 2", "0 <= lo && lo <= hi", "hi <= nwords * 32"]
+unwind: 75
+code_from: T4-SHF-01-U
+reference_z3: |
+  from z3 import *
+  words = Array('words', BitVecSort(32), BitVecSort(32))
+  nwords, lo, hi = BitVecs('nwords lo hi', 32)
+  s = Solver()
+  s.add(1 <= nwords, nwords <= 2, 0 <= lo, lo <= hi, hi <= nwords * 32)
+  viol = []
+  for t in range(65):                      # hi - lo <= 64
+      i = lo + t
+      run = i < hi
+      q, r = i / 32, SRem(i, 32)
+      viol.append(And(run, Or(q < 0, q >= nwords, r < 0, r >= 32)))
+  s.add(Or(viol))
+---
+id: T4-BND-03-U
+pair: T4-BND-03
+label: unsafe
+tier: 4
+category: bounds
+twin: code
+tags: [two_pointer, short_circuit_order]
+description: Two-pointer merge whose condition dereferences a[i] and b[j] before checking exhaustion.
+bug_explanation: With m == 0 the first comparison already reads b[0].
+entry: merge_count
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: b, type: "int[]", len: m}
+  - {name: m, type: int}
+  - {name: key, type: int}
+requires: ["0 <= n && n <= 4", "0 <= m && m <= 4"]
+elem_requires:
+  a: "-100 <= _ && _ <= 100"
+  b: "-100 <= _ && _ <= 100"
+witness: {a: [1], n: 1, b: [], m: 0, key: 1}
+unwind: 10
+code: |
+  int merge_count(const int *a, int n, const int *b, int m, int key) {
+      int i = 0;
+      int j = 0;
+      int c = 0;
+      while (i < n || j < m) {
+          if (a[i] <= b[j] || j >= m) {
+              if (a[i] == key) {
+                  c++;
+              }
+              i++;
+          } else {
+              if (b[j] == key) {
+                  c++;
+              }
+              j++;
+          }
+      }
+      return c;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  b = Array('b', BitVecSort(32), BitVecSort(32))
+  n, m, key = BitVecs('n m key', 32)
+  s = Solver()
+  s.add(0 <= n, n <= 4, 0 <= m, m <= 4)
+  oob_a = lambda k: Or(k < 0, k >= n)
+  oob_b = lambda k: Or(k < 0, k >= m)
+  i, j, alive, viol = BitVecVal(0, 32), BitVecVal(0, 32), BoolVal(True), []
+  for t in range(9):
+      run = And(alive, Or(i < n, j < m))
+      s.add(Implies(Not(oob_a(i)), And(-100 <= a[i], a[i] <= 100)))
+      s.add(Implies(Not(oob_b(j)), And(-100 <= b[j], b[j] <= 100)))
+      viol.append(And(run, Or(oob_a(i), oob_b(j))))          # a[i] <= b[j] reads both
+      take_a = Or(a[i] <= b[j], j >= m)
+      viol.append(And(run, take_a, oob_a(i)))
+      viol.append(And(run, Not(take_a), oob_b(j)))
+      i = If(And(run, take_a), i + 1, i)
+      j = If(And(run, Not(take_a)), j + 1, j)
+      alive = run
+  s.add(Or(viol))
+---
+id: T4-BND-03-S
+pair: T4-BND-03
+label: safe
+tier: 4
+category: bounds
+twin: code
+tags: [two_pointer, short_circuit_order]
+description: Checks exhaustion first and relies on && / || short-circuiting.
+entry: merge_count
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: b, type: "int[]", len: m}
+  - {name: m, type: int}
+  - {name: key, type: int}
+requires: ["0 <= n && n <= 4", "0 <= m && m <= 4"]
+elem_requires:
+  a: "-100 <= _ && _ <= 100"
+  b: "-100 <= _ && _ <= 100"
+unwind: 10
+code: |
+  int merge_count(const int *a, int n, const int *b, int m, int key) {
+      int i = 0;
+      int j = 0;
+      int c = 0;
+      while (i < n || j < m) {
+          if (j >= m || (i < n && a[i] <= b[j])) {
+              if (a[i] == key) {
+                  c++;
+              }
+              i++;
+          } else {
+              if (b[j] == key) {
+                  c++;
+              }
+              j++;
+          }
+      }
+      return c;
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  b = Array('b', BitVecSort(32), BitVecSort(32))
+  n, m, key = BitVecs('n m key', 32)
+  s = Solver()
+  s.add(0 <= n, n <= 4, 0 <= m, m <= 4)
+  oob_a = lambda k: Or(k < 0, k >= n)
+  oob_b = lambda k: Or(k < 0, k >= m)
+  i, j, alive, viol = BitVecVal(0, 32), BitVecVal(0, 32), BoolVal(True), []
+  for t in range(9):                       # at most n + m <= 8 iterations
+      run = And(alive, Or(i < n, j < m))
+      s.add(Implies(Not(oob_a(i)), And(-100 <= a[i], a[i] <= 100)))
+      s.add(Implies(Not(oob_b(j)), And(-100 <= b[j], b[j] <= 100)))
+      c1 = j >= m
+      reads = And(Not(c1), i < n)          # a[i] <= b[j] evaluated
+      viol.append(And(run, reads, Or(oob_a(i), oob_b(j))))
+      take_a = Or(c1, And(i < n, a[i] <= b[j]))
+      viol.append(And(run, take_a, oob_a(i)))
+      viol.append(And(run, Not(take_a), oob_b(j)))
+      i = If(And(run, take_a), i + 1, i)
+      j = If(And(run, Not(take_a)), j + 1, j)
+      alive = run
+  viol.append(And(alive, Or(i < n, j < m)))  # unrolling exhaustive (cannot happen)
+  s.add(Or(viol))
+---
+id: T4-DIV-02-U
+pair: T4-DIV-02
+label: unsafe
+tier: 4
+category: div_zero
+twin: code
+tags: [helper_function, loop_in_helper, degenerate_input]
+description: Bucket index divides by the value range computed by a helper; all-equal inputs give range 0.
+bug_explanation: A single element (or all elements equal) makes span() return 0.
+entry: bucket_of
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: v, type: int}
+  - {name: buckets, type: int}
+requires: ["1 <= n && n <= 6", "0 <= v && v <= 1000", "1 <= buckets && buckets <= 100"]
+elem_requires: {a: "0 <= _ && _ <= 1000"}
+witness: {a: [5], n: 1, v: 7, buckets: 3}
+unwind: 10
+code: |
+  static int span(const int *a, int n) {
+      int lo = a[0];
+      int hi = a[0];
+      for (int i = 1; i < n; i++) {
+          if (a[i] < lo) {
+              lo = a[i];
+          }
+          if (a[i] > hi) {
+              hi = a[i];
+          }
+      }
+      return hi - lo;
+  }
+
+  int bucket_of(const int *a, int n, int v, int buckets) {
+      return (v - a[0]) * buckets / span(a, n);
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n, v, buckets = BitVecs('n v buckets', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 6, 0 <= v, v <= 1000, 1 <= buckets, buckets <= 100)
+  for k in range(6):
+      K = BitVecVal(k, 32)
+      s.add(Implies(K < n, And(0 <= a[K], a[K] <= 1000)))
+  viol = [n < 1]                           # a[0] in bounds
+  lo = hi = a[0]
+  for t in range(1, 6):
+      i = BitVecVal(t, 32)
+      run = i < n
+      e = a[i]
+      lo = If(And(run, e < lo), e, lo)
+      hi = If(And(run, e > hi), e, hi)
+  sp = hi - lo                             # in [0, 1000], no overflow
+  num = (v - a[0]) * buckets               # |num| <= 100000, no overflow
+  viol.append(Or(sp == 0, Not(BVSDivNoOverflow(num, sp))))
+  s.add(Or(viol))
+---
+id: T4-DIV-02-S
+pair: T4-DIV-02
+label: safe
+tier: 4
+category: div_zero
+twin: code
+tags: [helper_function, loop_in_helper, degenerate_input]
+description: Divides by span + 1, which is at least 1.
+entry: bucket_of
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: v, type: int}
+  - {name: buckets, type: int}
+requires: ["1 <= n && n <= 6", "0 <= v && v <= 1000", "1 <= buckets && buckets <= 100"]
+elem_requires: {a: "0 <= _ && _ <= 1000"}
+unwind: 10
+code: |
+  static int span(const int *a, int n) {
+      int lo = a[0];
+      int hi = a[0];
+      for (int i = 1; i < n; i++) {
+          if (a[i] < lo) {
+              lo = a[i];
+          }
+          if (a[i] > hi) {
+              hi = a[i];
+          }
+      }
+      return hi - lo;
+  }
+
+  int bucket_of(const int *a, int n, int v, int buckets) {
+      return (v - a[0]) * buckets / (span(a, n) + 1);
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n, v, buckets = BitVecs('n v buckets', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 6, 0 <= v, v <= 1000, 1 <= buckets, buckets <= 100)
+  for k in range(6):
+      K = BitVecVal(k, 32)
+      s.add(Implies(K < n, And(0 <= a[K], a[K] <= 1000)))
+  viol = [n < 1]
+  lo = hi = a[0]
+  for t in range(1, 6):
+      i = BitVecVal(t, 32)
+      run = i < n
+      e = a[i]
+      lo = If(And(run, e < lo), e, lo)
+      hi = If(And(run, e > hi), e, hi)
+  d = hi - lo + 1
+  num = (v - a[0]) * buckets
+  viol.append(Or(d == 0, Not(BVSDivNoOverflow(num, d))))
+  s.add(Or(viol))
+

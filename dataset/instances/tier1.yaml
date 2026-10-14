@@ -1,0 +1,1039 @@
+# Tier 1: flat, straight-line functions (no loops; at most a ternary).
+# Each pair = UNSAFE version (-U) + SAFE twin (-S); `twin` says whether they differ in code or preconditions.
+---
+id: T1-BND-01-U
+pair: T1-BND-01
+label: unsafe
+tier: 1
+category: bounds
+twin: precondition
+tags: [off_by_one]
+description: Reads the element after i; i may be the last index.
+bug_explanation: With i == n-1 the access buf[i+1] reads buf[n].
+entry: next_item
+params:
+  - {name: buf, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: i, type: int}
+requires: ["1 <= n && n <= 64", "0 <= i && i < n"]
+witness: {buf: [7], n: 1, i: 0}
+code: |
+  int next_item(const int *buf, int n, int i) {
+      return buf[i + 1];
+  }
+reference_z3: |
+  from z3 import *
+  buf = Array('buf', BitVecSort(32), BitVecSort(32))
+  n, i = BitVecs('n i', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 64, 0 <= i, i < n)
+  idx = i + 1
+  s.add(Or(Not(BVAddNoOverflow(i, BitVecVal(1, 32), True)), idx < 0, idx >= n))
+---
+id: T1-BND-01-S
+pair: T1-BND-01
+label: safe
+tier: 1
+category: bounds
+twin: precondition
+tags: [off_by_one]
+description: Same code; precondition guarantees i+1 < n.
+entry: next_item
+params:
+  - {name: buf, type: "int[]", len: n}
+  - {name: n, type: int}
+  - {name: i, type: int}
+requires: ["2 <= n && n <= 64", "0 <= i && i < n - 1"]
+code_from: T1-BND-01-U
+reference_z3: |
+  from z3 import *
+  buf = Array('buf', BitVecSort(32), BitVecSort(32))
+  n, i = BitVecs('n i', 32)
+  s = Solver()
+  s.add(2 <= n, n <= 64, 0 <= i, i < n - 1)
+  idx = i + 1
+  s.add(Or(Not(BVAddNoOverflow(i, BitVecVal(1, 32), True)), idx < 0, idx >= n))
+---
+id: T1-BND-02-U
+pair: T1-BND-02
+label: unsafe
+tier: 1
+category: bounds
+twin: code
+tags: [off_by_one, lookup_table]
+description: 1-based month used directly as 0-based index into a 12-entry table.
+bug_explanation: month == 12 reads DAYS[12].
+entry: days_in_month
+params:
+  - {name: month, type: int}
+requires: ["1 <= month && month <= 12"]
+witness: {month: 12}
+code: |
+  static const int DAYS[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+  int days_in_month(int month) {
+      return DAYS[month];
+  }
+reference_z3: |
+  from z3 import *
+  month = BitVec('month', 32)
+  s = Solver()
+  s.add(1 <= month, month <= 12)
+  s.add(Or(month < 0, month >= 12))
+---
+id: T1-BND-02-S
+pair: T1-BND-02
+label: safe
+tier: 1
+category: bounds
+twin: code
+tags: [off_by_one, lookup_table]
+description: Correctly converts the 1-based month to a 0-based index.
+entry: days_in_month
+params:
+  - {name: month, type: int}
+requires: ["1 <= month && month <= 12"]
+code: |
+  static const int DAYS[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+  int days_in_month(int month) {
+      return DAYS[month - 1];
+  }
+reference_z3: |
+  from z3 import *
+  month = BitVec('month', 32)
+  s = Solver()
+  s.add(1 <= month, month <= 12)
+  idx = month - 1
+  s.add(Or(Not(BVSubNoUnderflow(month, BitVecVal(1, 32), True)), idx < 0, idx >= 12))
+---
+id: T1-BND-03-U
+pair: T1-BND-03
+label: unsafe
+tier: 1
+category: bounds
+twin: precondition
+tags: [negative_modulo, semantics_trap]
+description: Hash reduced with %, but the hash may be negative and C's % keeps the dividend's sign.
+bug_explanation: h = -1 gives h % size == -1, so table[-1] is read.
+entry: bucket
+params:
+  - {name: table, type: "int[]", len: size}
+  - {name: size, type: int}
+  - {name: h, type: int}
+requires: ["1 <= size && size <= 64"]
+witness: {table: [0, 0, 0, 0], size: 4, h: -1}
+code: |
+  int bucket(const int *table, int size, int h) {
+      return table[h % size];
+  }
+reference_z3: |
+  from z3 import *
+  table = Array('table', BitVecSort(32), BitVecSort(32))
+  size, h = BitVecs('size h', 32)
+  s = Solver()
+  s.add(1 <= size, size <= 64)
+  idx = SRem(h, size)          # C remainder, NOT Z3's bit-vector %
+  s.add(Or(size == 0, Not(BVSDivNoOverflow(h, size)), idx < 0, idx >= size))
+---
+id: T1-BND-03-S
+pair: T1-BND-03
+label: safe
+tier: 1
+category: bounds
+twin: precondition
+tags: [negative_modulo, semantics_trap]
+description: Same code; the hash is guaranteed non-negative.
+entry: bucket
+params:
+  - {name: table, type: "int[]", len: size}
+  - {name: size, type: int}
+  - {name: h, type: int}
+requires: ["1 <= size && size <= 64", "h >= 0"]
+code_from: T1-BND-03-U
+reference_z3: |
+  from z3 import *
+  table = Array('table', BitVecSort(32), BitVecSort(32))
+  size, h = BitVecs('size h', 32)
+  s = Solver()
+  s.add(1 <= size, size <= 64, h >= 0)
+  idx = SRem(h, size)
+  s.add(Or(size == 0, Not(BVSDivNoOverflow(h, size)), idx < 0, idx >= size))
+---
+id: T1-BND-04-U
+pair: T1-BND-04
+label: unsafe
+tier: 1
+category: bounds
+twin: precondition
+tags: [off_by_one, flattened_2d]
+description: Row-major grid access where the column may equal cols.
+bug_explanation: r = rows-1, c = cols reads grid[rows*cols].
+entry: cell
+params:
+  - {name: grid, type: "int[]", len: "rows * cols"}
+  - {name: rows, type: int}
+  - {name: cols, type: int}
+  - {name: r, type: int}
+  - {name: c, type: int}
+requires: ["1 <= rows && rows <= 16", "1 <= cols && cols <= 16", "0 <= r && r < rows", "0 <= c && c <= cols"]
+witness: {grid: [5], rows: 1, cols: 1, r: 0, c: 1}
+code: |
+  int cell(const int *grid, int rows, int cols, int r, int c) {
+      return grid[r * cols + c];
+  }
+reference_z3: |
+  from z3 import *
+  grid = Array('grid', BitVecSort(32), BitVecSort(32))
+  rows, cols, r, c = BitVecs('rows cols r c', 32)
+  s = Solver()
+  s.add(1 <= rows, rows <= 16, 1 <= cols, cols <= 16, 0 <= r, r < rows, 0 <= c, c <= cols)
+  idx = r * cols + c
+  s.add(Or(Not(BVMulNoOverflow(r, cols, True)), Not(BVAddNoOverflow(r * cols, c, True)),
+           idx < 0, idx >= rows * cols))
+---
+id: T1-BND-04-S
+pair: T1-BND-04
+label: safe
+tier: 1
+category: bounds
+twin: precondition
+tags: [off_by_one, flattened_2d]
+description: Same code; column strictly below cols.
+entry: cell
+params:
+  - {name: grid, type: "int[]", len: "rows * cols"}
+  - {name: rows, type: int}
+  - {name: cols, type: int}
+  - {name: r, type: int}
+  - {name: c, type: int}
+requires: ["1 <= rows && rows <= 16", "1 <= cols && cols <= 16", "0 <= r && r < rows", "0 <= c && c < cols"]
+code_from: T1-BND-04-U
+reference_z3: |
+  from z3 import *
+  grid = Array('grid', BitVecSort(32), BitVecSort(32))
+  rows, cols, r, c = BitVecs('rows cols r c', 32)
+  s = Solver()
+  s.add(1 <= rows, rows <= 16, 1 <= cols, cols <= 16, 0 <= r, r < rows, 0 <= c, c < cols)
+  idx = r * cols + c
+  s.add(Or(Not(BVMulNoOverflow(r, cols, True)), Not(BVAddNoOverflow(r * cols, c, True)),
+           idx < 0, idx >= rows * cols))
+---
+id: T1-BND-05-U
+pair: T1-BND-05
+label: unsafe
+tier: 1
+category: bounds
+twin: code
+tags: [off_by_one, rounding]
+description: Upper-median index computed as (n+1)/2.
+bug_explanation: n == 1 gives index 1 in a 1-element array.
+entry: median_value
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 1000"]
+witness: {a: [3], n: 1}
+code: |
+  int median_value(const int *a, int n) {
+      return a[(n + 1) / 2];
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 1000)
+  idx = (n + 1) / 2
+  s.add(Or(Not(BVAddNoOverflow(n, BitVecVal(1, 32), True)), idx < 0, idx >= n))
+---
+id: T1-BND-05-S
+pair: T1-BND-05
+label: safe
+tier: 1
+category: bounds
+twin: code
+tags: [off_by_one, rounding]
+description: Median index computed as n/2, always < n for n >= 1.
+entry: median_value
+params:
+  - {name: a, type: "int[]", len: n}
+  - {name: n, type: int}
+requires: ["1 <= n && n <= 1000"]
+code: |
+  int median_value(const int *a, int n) {
+      return a[n / 2];
+  }
+reference_z3: |
+  from z3 import *
+  a = Array('a', BitVecSort(32), BitVecSort(32))
+  n = BitVec('n', 32)
+  s = Solver()
+  s.add(1 <= n, n <= 1000)
+  idx = n / 2
+  s.add(Or(idx < 0, idx >= n))
+---
+id: T1-DIV-01-U
+pair: T1-DIV-01
+label: unsafe
+tier: 1
+category: div_zero
+twin: precondition
+tags: [empty_input]
+description: Average where the count may be zero.
+bug_explanation: count == 0 divides by zero.
+entry: average
+params:
+  - {name: total, type: int}
+  - {name: count, type: int}
+requires: ["0 <= total && total <= 1000000", "0 <= count && count <= 1000"]
+witness: {total: 10, count: 0}
+code: |
+  int average(int total, int count) {
+      return total / count;
+  }
+reference_z3: |
+  from z3 import *
+  total, count = BitVecs('total count', 32)
+  s = Solver()
+  s.add(0 <= total, total <= 1000000, 0 <= count, count <= 1000)
+  s.add(Or(count == 0, Not(BVSDivNoOverflow(total, count))))
+---
+id: T1-DIV-01-S
+pair: T1-DIV-01
+label: safe
+tier: 1
+category: div_zero
+twin: precondition
+tags: [empty_input]
+description: Same code; count is at least 1.
+entry: average
+params:
+  - {name: total, type: int}
+  - {name: count, type: int}
+requires: ["0 <= total && total <= 1000000", "1 <= count && count <= 1000"]
+code_from: T1-DIV-01-U
+reference_z3: |
+  from z3 import *
+  total, count = BitVecs('total count', 32)
+  s = Solver()
+  s.add(0 <= total, total <= 1000000, 1 <= count, count <= 1000)
+  s.add(Or(count == 0, Not(BVSDivNoOverflow(total, count))))
+---
+id: T1-DIV-02-U
+pair: T1-DIV-02
+label: unsafe
+tier: 1
+category: div_zero
+twin: code
+tags: [ineffective_guard]
+description: Ternary guard tests the wrong condition (old < 0 instead of old == 0).
+bug_explanation: old_v == 0 passes the guard and is used as divisor.
+entry: percent_change
+params:
+  - {name: old_v, type: int}
+  - {name: new_v, type: int}
+requires: ["0 <= old_v && old_v <= 10000", "0 <= new_v && new_v <= 10000"]
+witness: {old_v: 0, new_v: 5}
+code: |
+  int percent_change(int old_v, int new_v) {
+      return old_v < 0 ? 0 : (new_v - old_v) * 100 / old_v;
+  }
+reference_z3: |
+  from z3 import *
+  old_v, new_v = BitVecs('old_v new_v', 32)
+  s = Solver()
+  s.add(0 <= old_v, old_v <= 10000, 0 <= new_v, new_v <= 10000)
+  reach = Not(old_v < 0)
+  d = new_v - old_v
+  p = d * 100
+  s.add(And(reach, Or(Not(BVSubNoOverflow(new_v, old_v)), Not(BVSubNoUnderflow(new_v, old_v, True)),
+                      Not(BVMulNoOverflow(d, BitVecVal(100, 32), True)), Not(BVMulNoUnderflow(d, BitVecVal(100, 32))),
+                      old_v == 0, Not(BVSDivNoOverflow(p, old_v)))))
+---
+id: T1-DIV-02-S
+pair: T1-DIV-02
+label: safe
+tier: 1
+category: div_zero
+twin: code
+tags: [ineffective_guard]
+description: Ternary guard correctly excludes old == 0.
+entry: percent_change
+params:
+  - {name: old_v, type: int}
+  - {name: new_v, type: int}
+requires: ["0 <= old_v && old_v <= 10000", "0 <= new_v && new_v <= 10000"]
+code: |
+  int percent_change(int old_v, int new_v) {
+      return old_v == 0 ? 0 : (new_v - old_v) * 100 / old_v;
+  }
+reference_z3: |
+  from z3 import *
+  old_v, new_v = BitVecs('old_v new_v', 32)
+  s = Solver()
+  s.add(0 <= old_v, old_v <= 10000, 0 <= new_v, new_v <= 10000)
+  reach = Not(old_v == 0)
+  d = new_v - old_v
+  p = d * 100
+  s.add(And(reach, Or(Not(BVSubNoOverflow(new_v, old_v)), Not(BVSubNoUnderflow(new_v, old_v, True)),
+                      Not(BVMulNoOverflow(d, BitVecVal(100, 32), True)), Not(BVMulNoUnderflow(d, BitVecVal(100, 32))),
+                      old_v == 0, Not(BVSDivNoOverflow(p, old_v)))))
+---
+id: T1-DIV-03-U
+pair: T1-DIV-03
+label: unsafe
+tier: 1
+category: div_zero
+twin: precondition
+tags: [geometry, equal_inputs]
+description: Integer slope where the two x coordinates may coincide.
+bug_explanation: x1 == x2 makes the divisor zero.
+entry: slope
+params:
+  - {name: x1, type: int}
+  - {name: y1, type: int}
+  - {name: x2, type: int}
+  - {name: y2, type: int}
+requires: ["-1000 <= x1 && x1 <= 1000", "-1000 <= y1 && y1 <= 1000", "-1000 <= x2 && x2 <= 1000", "-1000 <= y2 && y2 <= 1000", "x1 <= x2"]
+witness: {x1: 3, y1: 0, x2: 3, y2: 9}
+code: |
+  int slope(int x1, int y1, int x2, int y2) {
+      return (y2 - y1) / (x2 - x1);
+  }
+reference_z3: |
+  from z3 import *
+  x1, y1, x2, y2 = BitVecs('x1 y1 x2 y2', 32)
+  s = Solver()
+  for v in (x1, y1, x2, y2):
+      s.add(-1000 <= v, v <= 1000)
+  s.add(x1 <= x2)
+  dy, dx = y2 - y1, x2 - x1
+  s.add(Or(Not(BVSubNoOverflow(y2, y1)), Not(BVSubNoUnderflow(y2, y1, True)),
+           Not(BVSubNoOverflow(x2, x1)), Not(BVSubNoUnderflow(x2, x1, True)),
+           dx == 0, Not(BVSDivNoOverflow(dy, dx))))
+---
+id: T1-DIV-03-S
+pair: T1-DIV-03
+label: safe
+tier: 1
+category: div_zero
+twin: precondition
+tags: [geometry, equal_inputs]
+description: Same code; x1 strictly less than x2.
+entry: slope
+params:
+  - {name: x1, type: int}
+  - {name: y1, type: int}
+  - {name: x2, type: int}
+  - {name: y2, type: int}
+requires: ["-1000 <= x1 && x1 <= 1000", "-1000 <= y1 && y1 <= 1000", "-1000 <= x2 && x2 <= 1000", "-1000 <= y2 && y2 <= 1000", "x1 < x2"]
+code_from: T1-DIV-03-U
+reference_z3: |
+  from z3 import *
+  x1, y1, x2, y2 = BitVecs('x1 y1 x2 y2', 32)
+  s = Solver()
+  for v in (x1, y1, x2, y2):
+      s.add(-1000 <= v, v <= 1000)
+  s.add(x1 < x2)
+  dy, dx = y2 - y1, x2 - x1
+  s.add(Or(Not(BVSubNoOverflow(y2, y1)), Not(BVSubNoUnderflow(y2, y1, True)),
+           Not(BVSubNoOverflow(x2, x1)), Not(BVSubNoUnderflow(x2, x1, True)),
+           dx == 0, Not(BVSDivNoOverflow(dy, dx))))
+---
+id: T1-DIV-04-U
+pair: T1-DIV-04
+label: unsafe
+tier: 1
+category: div_zero
+twin: code
+tags: [bitmask]
+description: Modulo by the low three bits of k, which can be zero.
+bug_explanation: k == 8 (or any multiple of 8) gives k & 7 == 0.
+entry: spread
+params:
+  - {name: v, type: int}
+  - {name: k, type: int}
+requires: ["0 <= v && v <= 100000", "0 <= k && k <= 1000"]
+witness: {v: 5, k: 8}
+code: |
+  int spread(int v, int k) {
+      return v % (k & 7);
+  }
+reference_z3: |
+  from z3 import *
+  v, k = BitVecs('v k', 32)
+  s = Solver()
+  s.add(0 <= v, v <= 100000, 0 <= k, k <= 1000)
+  d = k & 7
+  s.add(Or(d == 0, Not(BVSDivNoOverflow(v, d))))
+---
+id: T1-DIV-04-S
+pair: T1-DIV-04
+label: safe
+tier: 1
+category: div_zero
+twin: code
+tags: [bitmask]
+description: Adds one to the masked value so the divisor is in [1, 8].
+entry: spread
+params:
+  - {name: v, type: int}
+  - {name: k, type: int}
+requires: ["0 <= v && v <= 100000", "0 <= k && k <= 1000"]
+code: |
+  int spread(int v, int k) {
+      return v % ((k & 7) + 1);
+  }
+reference_z3: |
+  from z3 import *
+  v, k = BitVecs('v k', 32)
+  s = Solver()
+  s.add(0 <= v, v <= 100000, 0 <= k, k <= 1000)
+  d = (k & 7) + 1
+  s.add(Or(d == 0, Not(BVSDivNoOverflow(v, d))))
+---
+id: T1-DIV-05-U
+pair: T1-DIV-05
+label: unsafe
+tier: 1
+category: div_zero
+twin: code
+tags: [unsigned_wrap, semantics_trap]
+description: Divisor slots+1 wraps to 0 for slots == UINT_MAX.
+bug_explanation: Unsigned wraparound itself is allowed, but UINT_MAX + 1u == 0 is then used as a divisor.
+entry: per_slot
+params:
+  - {name: total, type: unsigned}
+  - {name: slots, type: unsigned}
+requires: ["total <= 100000"]
+witness: {total: 1, slots: 4294967295}
+code: |
+  unsigned per_slot(unsigned total, unsigned slots) {
+      return total / (slots + 1u);
+  }
+reference_z3: |
+  from z3 import *
+  total, slots = BitVecs('total slots', 32)
+  s = Solver()
+  s.add(ULE(total, 100000))
+  s.add(slots + 1 == 0)
+---
+id: T1-DIV-05-S
+pair: T1-DIV-05
+label: safe
+tier: 1
+category: div_zero
+twin: code
+tags: [unsigned_wrap, semantics_trap]
+description: Forces the lowest bit on, so the divisor is odd and never zero.
+entry: per_slot
+params:
+  - {name: total, type: unsigned}
+  - {name: slots, type: unsigned}
+requires: ["total <= 100000"]
+code: |
+  unsigned per_slot(unsigned total, unsigned slots) {
+      return total / (slots | 1u);
+  }
+reference_z3: |
+  from z3 import *
+  total, slots = BitVecs('total slots', 32)
+  s = Solver()
+  s.add(ULE(total, 100000))
+  s.add((slots | 1) == 0)
+---
+id: T1-OVF-01-U
+pair: T1-OVF-01
+label: unsafe
+tier: 1
+category: overflow
+twin: code
+tags: [classic_midpoint]
+description: Classic (lo + hi) / 2 midpoint.
+bug_explanation: lo + hi exceeds INT_MAX when both are large.
+entry: midpoint
+params:
+  - {name: lo, type: int}
+  - {name: hi, type: int}
+requires: ["0 <= lo && lo <= hi"]
+witness: {lo: 1, hi: 2147483647}
+code: |
+  int midpoint(int lo, int hi) {
+      return (lo + hi) / 2;
+  }
+reference_z3: |
+  from z3 import *
+  lo, hi = BitVecs('lo hi', 32)
+  s = Solver()
+  s.add(0 <= lo, lo <= hi)
+  s.add(Or(Not(BVAddNoOverflow(lo, hi, True)), Not(BVAddNoUnderflow(lo, hi))))
+---
+id: T1-OVF-01-S
+pair: T1-OVF-01
+label: safe
+tier: 1
+category: overflow
+twin: code
+tags: [classic_midpoint]
+description: Overflow-free midpoint lo + (hi - lo) / 2.
+entry: midpoint
+params:
+  - {name: lo, type: int}
+  - {name: hi, type: int}
+requires: ["0 <= lo && lo <= hi"]
+code: |
+  int midpoint(int lo, int hi) {
+      return lo + (hi - lo) / 2;
+  }
+reference_z3: |
+  from z3 import *
+  lo, hi = BitVecs('lo hi', 32)
+  s = Solver()
+  s.add(0 <= lo, lo <= hi)
+  d = hi - lo
+  h = d / 2
+  s.add(Or(Not(BVSubNoOverflow(hi, lo)), Not(BVSubNoUnderflow(hi, lo, True)),
+           Not(BVAddNoOverflow(lo, h, True)), Not(BVAddNoUnderflow(lo, h))))
+---
+id: T1-OVF-02-U
+pair: T1-OVF-02
+label: unsafe
+tier: 1
+category: overflow
+twin: precondition
+tags: [int_min_div, semantics_trap]
+description: Divisor is non-zero, but INT_MIN / -1 still overflows.
+bug_explanation: x = INT_MIN, d = -1 overflows (result 2^31 is not representable).
+entry: scale_down
+params:
+  - {name: x, type: int}
+  - {name: d, type: int}
+requires: ["d != 0"]
+witness: {x: -2147483648, d: -1}
+code: |
+  int scale_down(int x, int d) {
+      return x / d;
+  }
+reference_z3: |
+  from z3 import *
+  x, d = BitVecs('x d', 32)
+  s = Solver()
+  s.add(d != 0)
+  s.add(Or(d == 0, Not(BVSDivNoOverflow(x, d))))
+---
+id: T1-OVF-02-S
+pair: T1-OVF-02
+label: safe
+tier: 1
+category: overflow
+twin: precondition
+tags: [int_min_div, semantics_trap]
+description: Same code; divisor strictly positive.
+entry: scale_down
+params:
+  - {name: x, type: int}
+  - {name: d, type: int}
+requires: ["d > 0"]
+code_from: T1-OVF-02-U
+reference_z3: |
+  from z3 import *
+  x, d = BitVecs('x d', 32)
+  s = Solver()
+  s.add(d > 0)
+  s.add(Or(d == 0, Not(BVSDivNoOverflow(x, d))))
+---
+id: T1-OVF-03-U
+pair: T1-OVF-03
+label: unsafe
+tier: 1
+category: overflow
+twin: precondition
+tags: [numeric_boundary]
+description: Area of a rectangle with sides up to 50000.
+bug_explanation: 50000 * 50000 = 2.5e9 > INT_MAX.
+entry: area
+params:
+  - {name: w, type: int}
+  - {name: h, type: int}
+requires: ["0 <= w && w <= 50000", "0 <= h && h <= 50000"]
+witness: {w: 50000, h: 50000}
+code: |
+  int area(int w, int h) {
+      return w * h;
+  }
+reference_z3: |
+  from z3 import *
+  w, h = BitVecs('w h', 32)
+  s = Solver()
+  s.add(0 <= w, w <= 50000, 0 <= h, h <= 50000)
+  s.add(Or(Not(BVMulNoOverflow(w, h, True)), Not(BVMulNoUnderflow(w, h))))
+---
+id: T1-OVF-03-S
+pair: T1-OVF-03
+label: safe
+tier: 1
+category: overflow
+twin: precondition
+tags: [numeric_boundary]
+description: Same code; sides up to 46340 (46340^2 = 2147395600 <= INT_MAX).
+entry: area
+params:
+  - {name: w, type: int}
+  - {name: h, type: int}
+requires: ["0 <= w && w <= 46340", "0 <= h && h <= 46340"]
+code_from: T1-OVF-03-U
+reference_z3: |
+  from z3 import *
+  w, h = BitVecs('w h', 32)
+  s = Solver()
+  s.add(0 <= w, w <= 46340, 0 <= h, h <= 46340)
+  s.add(Or(Not(BVMulNoOverflow(w, h, True)), Not(BVMulNoUnderflow(w, h))))
+---
+id: T1-OVF-04-U
+pair: T1-OVF-04
+label: unsafe
+tier: 1
+category: overflow
+twin: precondition
+tags: [int_min_negation]
+description: Absolute value by negation.
+bug_explanation: -INT_MIN is not representable.
+entry: abs_val
+params:
+  - {name: x, type: int}
+requires: []
+witness: {x: -2147483648}
+code: |
+  int abs_val(int x) {
+      return x < 0 ? -x : x;
+  }
+reference_z3: |
+  from z3 import *
+  x = BitVec('x', 32)
+  s = Solver()
+  s.add(And(x < 0, Not(BVSNegNoOverflow(x))))
+---
+id: T1-OVF-04-S
+pair: T1-OVF-04
+label: safe
+tier: 1
+category: overflow
+twin: precondition
+tags: [int_min_negation]
+description: Same code; INT_MIN excluded by the precondition.
+entry: abs_val
+params:
+  - {name: x, type: int}
+requires: ["x > INT_MIN"]
+code_from: T1-OVF-04-U
+reference_z3: |
+  from z3 import *
+  x = BitVec('x', 32)
+  s = Solver()
+  s.add(x > -2**31)
+  s.add(And(x < 0, Not(BVSNegNoOverflow(x))))
+---
+id: T1-OVF-05-U
+pair: T1-OVF-05
+label: unsafe
+tier: 1
+category: overflow
+twin: code
+tags: [widening_too_late]
+description: Multiplication happens in int before being widened to long long.
+bug_explanation: seconds = 3000000 makes seconds * 1000 overflow int even though the result type is long long.
+entry: to_millis
+params:
+  - {name: seconds, type: int}
+requires: ["0 <= seconds && seconds <= 100000000"]
+witness: {seconds: 3000000}
+code: |
+  long long to_millis(int seconds) {
+      return seconds * 1000;
+  }
+reference_z3: |
+  from z3 import *
+  seconds = BitVec('seconds', 32)
+  s = Solver()
+  s.add(0 <= seconds, seconds <= 100000000)
+  k = BitVecVal(1000, 32)
+  s.add(Or(Not(BVMulNoOverflow(seconds, k, True)), Not(BVMulNoUnderflow(seconds, k))))
+---
+id: T1-OVF-05-S
+pair: T1-OVF-05
+label: safe
+tier: 1
+category: overflow
+twin: code
+tags: [widening_too_late]
+description: Widens before multiplying.
+entry: to_millis
+params:
+  - {name: seconds, type: int}
+requires: ["0 <= seconds && seconds <= 100000000"]
+code: |
+  long long to_millis(int seconds) {
+      return (long long)seconds * 1000;
+  }
+reference_z3: |
+  from z3 import *
+  seconds = BitVec('seconds', 32)
+  s = Solver()
+  s.add(0 <= seconds, seconds <= 100000000)
+  w = SignExt(32, seconds)
+  k = BitVecVal(1000, 64)
+  s.add(Or(Not(BVMulNoOverflow(w, k, True)), Not(BVMulNoUnderflow(w, k))))
+---
+id: T1-OVF-06-U
+pair: T1-OVF-06
+label: unsafe
+tier: 1
+category: overflow
+twin: code
+tags: [operation_order]
+description: Fahrenheit-to-Celsius multiplying before dividing.
+bug_explanation: f = 1000000000 makes (f - 32) * 5 overflow.
+entry: f_to_c
+params:
+  - {name: f, type: int}
+requires: ["-1000000000 <= f && f <= 1000000000"]
+witness: {f: 1000000000}
+code: |
+  int f_to_c(int f) {
+      return (f - 32) * 5 / 9;
+  }
+reference_z3: |
+  from z3 import *
+  f = BitVec('f', 32)
+  s = Solver()
+  s.add(-1000000000 <= f, f <= 1000000000)
+  t = f - 32
+  five = BitVecVal(5, 32)
+  s.add(Or(Not(BVSubNoUnderflow(f, BitVecVal(32, 32), True)), Not(BVSubNoOverflow(f, BitVecVal(32, 32))),
+           Not(BVMulNoOverflow(t, five, True)), Not(BVMulNoUnderflow(t, five))))
+---
+id: T1-OVF-06-S
+pair: T1-OVF-06
+label: safe
+tier: 1
+category: overflow
+twin: code
+tags: [operation_order]
+description: Divides before multiplying, so intermediate values stay small.
+entry: f_to_c
+params:
+  - {name: f, type: int}
+requires: ["-1000000000 <= f && f <= 1000000000"]
+code: |
+  int f_to_c(int f) {
+      return (f - 32) / 9 * 5;
+  }
+reference_z3: |
+  from z3 import *
+  f = BitVec('f', 32)
+  s = Solver()
+  s.add(-1000000000 <= f, f <= 1000000000)
+  t = f - 32
+  q = t / 9
+  five = BitVecVal(5, 32)
+  s.add(Or(Not(BVSubNoUnderflow(f, BitVecVal(32, 32), True)), Not(BVSubNoOverflow(f, BitVecVal(32, 32))),
+           Not(BVMulNoOverflow(q, five, True)), Not(BVMulNoUnderflow(q, five))))
+---
+id: T1-SHF-01-U
+pair: T1-SHF-01
+label: unsafe
+tier: 1
+category: shift
+twin: precondition
+tags: [sign_bit_shift]
+description: 1 << k for k up to 31.
+bug_explanation: 1 << 31 is not representable in a signed int (undefined in C).
+entry: bit_mask
+params:
+  - {name: k, type: int}
+requires: ["0 <= k && k <= 31"]
+witness: {k: 31}
+code: |
+  int bit_mask(int k) {
+      return 1 << k;
+  }
+reference_z3: |
+  from z3 import *
+  k = BitVec('k', 32)
+  s = Solver()
+  s.add(0 <= k, k <= 31)
+  one = BitVecVal(1, 32)
+  # signed left shift: amount in [0,32) and result representable, i.e. 1 <= INT_MAX >> k
+  s.add(Or(k < 0, k >= 32, one > (BitVecVal(2**31 - 1, 32) >> k)))
+---
+id: T1-SHF-01-S
+pair: T1-SHF-01
+label: safe
+tier: 1
+category: shift
+twin: precondition
+tags: [sign_bit_shift]
+description: Same code; k at most 30.
+entry: bit_mask
+params:
+  - {name: k, type: int}
+requires: ["0 <= k && k <= 30"]
+code_from: T1-SHF-01-U
+reference_z3: |
+  from z3 import *
+  k = BitVec('k', 32)
+  s = Solver()
+  s.add(0 <= k, k <= 30)
+  one = BitVecVal(1, 32)
+  s.add(Or(k < 0, k >= 32, one > (BitVecVal(2**31 - 1, 32) >> k)))
+---
+id: T1-SHF-02-U
+pair: T1-SHF-02
+label: unsafe
+tier: 1
+category: shift
+twin: code
+tags: [full_width_shift]
+description: Low-bit mask (1u << bits) - 1 for bits up to 32.
+bug_explanation: bits == 32 shifts a 32-bit value by its full width.
+entry: low_mask
+params:
+  - {name: bits, type: int}
+requires: ["0 <= bits && bits <= 32"]
+witness: {bits: 32}
+code: |
+  unsigned low_mask(int bits) {
+      return (1u << bits) - 1u;
+  }
+reference_z3: |
+  from z3 import *
+  bits = BitVec('bits', 32)
+  s = Solver()
+  s.add(0 <= bits, bits <= 32)
+  s.add(Or(bits < 0, bits >= 32))
+---
+id: T1-SHF-02-S
+pair: T1-SHF-02
+label: safe
+tier: 1
+category: shift
+twin: code
+tags: [full_width_shift]
+description: Special-cases bits >= 32.
+entry: low_mask
+params:
+  - {name: bits, type: int}
+requires: ["0 <= bits && bits <= 32"]
+code: |
+  unsigned low_mask(int bits) {
+      return bits >= 32 ? 0xFFFFFFFFu : (1u << bits) - 1u;
+  }
+reference_z3: |
+  from z3 import *
+  bits = BitVec('bits', 32)
+  s = Solver()
+  s.add(0 <= bits, bits <= 32)
+  reach = Not(bits >= 32)
+  s.add(And(reach, Or(bits < 0, bits >= 32)))
+---
+id: T1-SHF-03-U
+pair: T1-SHF-03
+label: unsafe
+tier: 1
+category: shift
+twin: precondition
+tags: [negative_shift]
+description: Right shift by k - 1 where k may be 0.
+bug_explanation: k == 0 gives a shift amount of -1.
+entry: half_power
+params:
+  - {name: x, type: int}
+  - {name: k, type: int}
+requires: ["0 <= k && k <= 31"]
+witness: {x: 64, k: 0}
+code: |
+  int half_power(int x, int k) {
+      return x >> (k - 1);
+  }
+reference_z3: |
+  from z3 import *
+  x, k = BitVecs('x k', 32)
+  s = Solver()
+  s.add(0 <= k, k <= 31)
+  amt = k - 1
+  s.add(Or(Not(BVSubNoUnderflow(k, BitVecVal(1, 32), True)), amt < 0, amt >= 32))
+---
+id: T1-SHF-03-S
+pair: T1-SHF-03
+label: safe
+tier: 1
+category: shift
+twin: precondition
+tags: [negative_shift]
+description: Same code; k in [1, 32] so the amount is in [0, 31].
+entry: half_power
+params:
+  - {name: x, type: int}
+  - {name: k, type: int}
+requires: ["1 <= k && k <= 32"]
+code_from: T1-SHF-03-U
+reference_z3: |
+  from z3 import *
+  x, k = BitVecs('x k', 32)
+  s = Solver()
+  s.add(1 <= k, k <= 32)
+  amt = k - 1
+  s.add(Or(Not(BVSubNoUnderflow(k, BitVecVal(1, 32), True)), amt < 0, amt >= 32))
+---
+id: T1-SHF-04-U
+pair: T1-SHF-04
+label: unsafe
+tier: 1
+category: shift
+twin: code
+tags: [sign_bit_shift, byte_packing]
+description: Packs an alpha byte into the top 8 bits of a signed int.
+bug_explanation: a >= 128 makes a << 24 exceed INT_MAX (undefined signed left shift).
+entry: pack_ar
+params:
+  - {name: r, type: int}
+  - {name: a, type: int}
+requires: ["0 <= r && r <= 255", "0 <= a && a <= 255"]
+witness: {r: 0, a: 200}
+code: |
+  int pack_ar(int r, int a) {
+      return (a << 24) | r;
+  }
+reference_z3: |
+  from z3 import *
+  r, a = BitVecs('r a', 32)
+  s = Solver()
+  s.add(0 <= r, r <= 255, 0 <= a, a <= 255)
+  k = BitVecVal(24, 32)
+  s.add(Or(a < 0, a > (BitVecVal(2**31 - 1, 32) >> k)))
+---
+id: T1-SHF-04-S
+pair: T1-SHF-04
+label: safe
+tier: 1
+category: shift
+twin: code
+tags: [sign_bit_shift, byte_packing]
+description: Shifts as unsigned, which is well-defined.
+entry: pack_ar
+params:
+  - {name: r, type: int}
+  - {name: a, type: int}
+requires: ["0 <= r && r <= 255", "0 <= a && a <= 255"]
+code: |
+  unsigned pack_ar(int r, int a) {
+      return ((unsigned)a << 24) | (unsigned)r;
+  }
+reference_z3: |
+  from z3 import *
+  r, a = BitVecs('r a', 32)
+  s = Solver()
+  s.add(0 <= r, r <= 255, 0 <= a, a <= 255)
+  # unsigned shift by the constant 24 is always defined; no other operations can fail
+  s.add(Or(BitVecVal(24, 32) < 0, BitVecVal(24, 32) >= 32))
