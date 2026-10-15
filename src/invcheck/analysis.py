@@ -66,6 +66,9 @@ def load_records(include_transcripts: bool = False) -> pd.DataFrame:
     meta = pd.DataFrame([{"instance": i.id, "pair": i.pair, "tier": i.tier, "category": i.category,
                           "twin": i.twin, "label": i.label, "tags": ",".join(i.tags)} for i in load_dataset()])
     df = df.merge(meta, on="instance", how="inner")
+    # only complete (model, approach) runs are analysed; partial runs are listed in report/RUN_STATUS.md
+    full = df.groupby(["model", "approach"])["instance"].transform("nunique") >= df["instance"].nunique()
+    df = df[full | (df["model"] == "tool")].copy()
     df["correct"] = df["verdict"] == df["gold"]
     df["decided"] = df["verdict"] != "UNKNOWN"
     df["system"] = df["model"] + " | " + df["approach"]

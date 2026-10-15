@@ -105,6 +105,8 @@ class LLM:
         for _ in range(attempts):
             try:
                 return self._chat(system, messages)
+            except QuotaExhausted as exc:
+                return Completion(text="", error=f"quota exhausted: {exc}")
             except RetryableError as exc:
                 last = exc
                 time.sleep(exc.wait or delay)
@@ -117,6 +119,10 @@ class LLM:
 
     def _chat(self, system: str, messages: list[dict]) -> Completion:  # pragma: no cover
         raise NotImplementedError
+
+
+class QuotaExhausted(Exception):
+    """A quota wall (e.g. a daily request cap) whose reset is too far away to wait for."""
 
 
 class RetryableError(Exception):
@@ -178,7 +184,7 @@ class Gemini(LLM):
         body = {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents, "generationConfig": gen}
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
         t0 = time.time()
-        r = requests.post(url, json=body, headers={"x-goog-api-key": key}, timeout=600)
+        r = _post_with_deadline(url, body, {"x-goog-api-key": key}, deadline_s=float(self.opts.get("deadline_s", 240)))
         if r.status_code in (429, 500, 502, 503, 504):
             wait = None
             try:
@@ -187,6 +193,8 @@ class Gemini(LLM):
                         wait = float(det["retryDelay"].rstrip("s")) + 1
             except Exception:  # noqa: BLE001
                 pass
+            if wait is not None and wait > 900:  # waiting more than 15 minutes: report instead of sleeping for hours
+                raise QuotaExhausted(f"gemini {r.status_code} on {self.model}; Google says retry in {wait / 3600:.1f} h")
             raise RetryableError(f"gemini {r.status_code}: {r.text[:300]}", wait)
         if r.status_code != 200:
             raise RuntimeError(f"gemini {r.status_code}: {r.text[:500]}")
@@ -199,6 +207,28 @@ class Gemini(LLM):
         usage = d.get("usageMetadata", {})
         out_tok = usage.get("candidatesTokenCount", 0) + usage.get("thoughtsTokenCount", 0)
         return Completion(text, usage.get("promptTokenCount", 0), out_tok, time.time() - t0)
+
+
+def _post_with_deadline(url: str, body: dict, headers: dict, deadline_s: float) -> requests.Response:
+    """POST with a hard wall-clock deadline. `requests`' timeout only bounds the gap between bytes, so a
+    connection that trickles data (or a queued request) can block a run for hours. On expiry the request is
+    abandoned and retried through the normal back-off path."""
+    box: dict = {}
+
+    def go():
+        try:
+            box["r"] = requests.post(url, json=body, headers=headers, timeout=(15, deadline_s))
+        except Exception as exc:  # noqa: BLE001
+            box["e"] = exc
+
+    th = threading.Thread(target=go, daemon=True)
+    th.start()
+    th.join(deadline_s)
+    if th.is_alive():
+        raise RetryableError(f"gemini request exceeded the {deadline_s:.0f}s deadline", wait=2)
+    if "e" in box:
+        raise box["e"]
+    return box["r"]
 
 
 PROVIDERS = {"ollama": Ollama, "gemini": Gemini}

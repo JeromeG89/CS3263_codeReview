@@ -82,11 +82,15 @@ def main():
                     total += n_inst - k
                 rows.append(f"| `{m}` | `{a}` | {k} / {n_inst} | {status} |")
         lines += [f"## Run `{cfg['run_name']}` (`{cfg_path}`)", ""]
+        note_path = RUNS / cfg["run_name"] / "STOP_NOTE.txt"  # committed, human-written reason for an unfinished run
         reason = stop_reason(cfg["run_name"]) if total else None
+        note = note_path.read_text().strip() if (total and note_path.exists()) else None
         if total == 0:
             lines.append("**Complete.** Nothing to resume.")
         else:
-            lines.append(f"**{total} instance-runs remaining.**" + (f" Last stop: {reason}" if reason else ""))
+            lines.append(f"**{total} instance-runs remaining.**" + (f" Last stop: {reason}" if reason and not note else ""))
+        if note:
+            lines += ["", "**Why it stopped** (from `" + str(note_path.relative_to(ROOT)) + "`):", ""] + ["> " + ln for ln in note.splitlines()]
         lines += ["", "| Model | Approach | Done | Status |", "|---|---|---|---|", *rows, ""]
         if total:
             lines += ["To resume (from the repo root, on a fresh clone of branch `project-pipeline`):", "", "```bash"]

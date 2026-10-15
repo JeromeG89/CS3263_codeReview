@@ -68,8 +68,11 @@ def fig_accuracy(s: pd.DataFrame, tools: pd.DataFrame, models: list[str]):
         for xi, v, hi in zip(x, g["accuracy"], g["acc_hi"]):
             if not np.isnan(v):
                 ax.text(xi, hi + 0.015, f"{100 * v:.0f}", ha="center", va="bottom", fontsize=8, color=INK2)
-        ax.set_xticks(x, [APPROACH_LABEL[a].replace(" + ", "\n+ ").replace("LLM→Z3 ", "LLM→Z3\n") for a in g.index],
-                      fontsize=7.5)
+        short_lbl = {"direct": "Direct", "direct_cot": "CoT", "z3": "Z3", "z3_guided": "Z3\nguided", "z3_repair": "Z3\n+repair"}
+        ax.set_xticks(x, [short_lbl[a] for a in g.index], fontsize=8)
+        for xi, v in zip(x, g["accuracy"]):
+            if np.isnan(v):
+                ax.text(xi, 0.03, "not\nrun", ha="center", va="bottom", fontsize=8, color=INK2)
         ax.set_title(short_model(m))
         ax.axhline(0.5, color=INK2, lw=0.8, ls=(0, (1, 2)))
     ax = axes[-1]
