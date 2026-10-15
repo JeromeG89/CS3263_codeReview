@@ -646,6 +646,7 @@ ollama pull qwen2.5-coder:7b && ollama pull llama3.2:3b
 .venv/bin/python scripts/rescore.py                                # re-score with the final parser/validator
 .venv/bin/python scripts/analyze.py                                # tables + figures
 .venv/bin/python scripts/build_appendices.py                       # Appendix A and B
+.venv/bin/python scripts/run_status.py                             # where each run stopped + resume commands
 ```
 
 | Where | What |
@@ -654,3 +655,4 @@ ollama pull qwen2.5-coder:7b && ollama pull llama3.2:3b
 | `results/analysis/` | `tables.md` (all result tables), CSVs, `summary.json` |
 | `report/figures/` | figures |
 | `dataset/VALIDATION.md` | per-instance validation results |
+| `report/RUN_STATUS.md` | how far every evaluation run got, and the exact command to resume an interrupted run with your own API key (regenerate with `scripts/run_status.py`) |

@@ -20,7 +20,7 @@ HEADER = """\
 **CS3263 Project Report** — Jerome Goh (A0307923A, team lead), Mothiki Eswara Anirudh (A0308802J), Goh Joon Xiang (A0307578R)
 
 Companion documents: `report/IMPLEMENTATION.md` (full implementation write-up), `report/APPENDIX_A_DATASET.md`
-(every instance, precondition and reference Z3 encoding), `report/APPENDIX_B_PROMPTS.md` (every prompt, verbatim).
+(every instance, precondition and reference Z3 encoding), `report/APPENDIX_B_PROMPTS.md` (every prompt, verbatim), `report/RUN_STATUS.md` (how far each evaluation run got and how to resume it).
 
 ---
 """
@@ -66,10 +66,35 @@ def fill(md: str, with_figures: bool) -> str:
     return md
 
 
+def run_status_note() -> str:
+    """Insert where any evaluation run stopped (from report/RUN_STATUS.md, made by run_status.py)."""
+    status = ROOT / "report" / "RUN_STATUS.md"
+    if not status.exists():
+        return ""
+    text = status.read_text()
+    rows = [ln for ln in text.splitlines() if "**incomplete**" in ln]
+    if not rows:
+        return ""
+    stops = re.findall(r"^\*\*(\d+ instance-runs remaining\.)\*\*(.*)$", text, flags=re.M)
+    gen = re.search(r"_Generated ([\d\- :]+) by", text)
+    note = ["> **Run coverage notice.** Some evaluation runs are incomplete"
+            + (f" (as of {gen.group(1).strip()})" if gen else "") + ". "
+            "The numbers below cover only the finished part. `report/RUN_STATUS.md` lists exactly where each run "
+            "stopped and the command to resume it with your own API key; resumed runs continue from the last recorded instance.", ">"]
+    for n, why in stops:
+        note.append(f"> - {n}{why}")
+    note += [">", "> | Model | Approach | Done | Status |", "> |---|---|---|---|"] + ["> " + r for r in rows]
+    return "\n".join(note) + "\n"
+
+
 def main():
     parts = [HEADER]
     for path in sorted(SECTIONS.glob("*.md")):
-        parts.append(fill(path.read_text(), with_figures=path.name.startswith("06_")).strip() + "\n")
+        body = fill(path.read_text(), with_figures=path.name.startswith("06_")).strip() + "\n"
+        if path.name.startswith("06_") and run_status_note():
+            head, _, rest = body.partition("\n")
+            body = head + "\n\n" + run_status_note() + "\n" + rest
+        parts.append(body)
     out = ROOT / "report" / "report.md"
     out.write_text("\n\n".join(parts))
     left = re.findall(r"\[(?:FIG|TABLE|CHECK|TODO|CONFIRM|LLAMA[^\]]*|L)\b[^\]]*\]", out.read_text())

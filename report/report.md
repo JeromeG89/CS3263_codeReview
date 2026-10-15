@@ -3,7 +3,7 @@
 **CS3263 Project Report** — Jerome Goh (A0307923A, team lead), Mothiki Eswara Anirudh (A0308802J), Goh Joon Xiang (A0307578R)
 
 Companion documents: `report/IMPLEMENTATION.md` (full implementation write-up), `report/APPENDIX_A_DATASET.md`
-(every instance, precondition and reference Z3 encoding), `report/APPENDIX_B_PROMPTS.md` (every prompt, verbatim).
+(every instance, precondition and reference Z3 encoding), `report/APPENDIX_B_PROMPTS.md` (every prompt, verbatim), `report/RUN_STATUS.md` (how far each evaluation run got and how to resume it).
 
 ---
 
@@ -506,6 +506,24 @@ Python 3.11; Z3 via the `z3-solver` Python package; Apple clang 17 with AddressS
 
 
 # 6. Results
+
+> **Run coverage notice.** Some evaluation runs are incomplete (as of 2026-10-15 12:00). The numbers below cover only the finished part. `report/RUN_STATUS.md` lists exactly where each run stopped and the command to resume it with your own API key; resumed runs continue from the last recorded instance.
+>
+> - 1158 instance-runs remaining. Last stop: the run is in progress or was interrupted (no clean end in the log)
+>
+> | Model | Approach | Done | Status |
+> |---|---|---|---|
+> | `gemini:gemini-3.5-flash-lite` | `direct` | 38 / 120 | **incomplete** |
+> | `gemini:gemini-3.5-flash-lite` | `direct_cot` | 0 / 120 | **incomplete** |
+> | `gemini:gemini-3.5-flash-lite` | `z3` | 0 / 120 | **incomplete** |
+> | `gemini:gemini-3.5-flash-lite` | `z3_guided` | 0 / 120 | **incomplete** |
+> | `gemini:gemini-3.5-flash-lite` | `z3_repair` | 0 / 120 | **incomplete** |
+> | `gemini:gemini-3.8-flash` | `direct` | 2 / 120 | **incomplete** |
+> | `gemini:gemini-3.8-flash` | `direct_cot` | 0 / 120 | **incomplete** |
+> | `gemini:gemini-3.8-flash` | `z3` | 2 / 120 | **incomplete** |
+> | `gemini:gemini-3.8-flash` | `z3_guided` | 0 / 120 | **incomplete** |
+> | `gemini:gemini-3.8-flash` | `z3_repair` | 0 / 120 | **incomplete** |
+
 
 All numbers are over the 120 benchmark instances (60 UNSAFE, 60 SAFE) unless stated otherwise. Brackets give 95% Wilson intervals. Every LLM record was re-scored with the final parser and validator (`scripts/rescore.py`); for qwen this changed no verdict and no witness status. The full generated tables are in `results/analysis/tables.md`.
 
