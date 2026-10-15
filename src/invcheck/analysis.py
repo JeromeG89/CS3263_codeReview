@@ -23,8 +23,9 @@ APPROACH_LABEL = {
     "z3_guided": "LLM→Z3 guided", "z3_repair": "LLM→Z3 guided + repair",
     "reference_z3": "Gold Z3 (Claude)", "cbmc": "CBMC", "fuzz_dict": "Fuzz (dictionary)",
     "fuzz_random": "Fuzz (random)",
-    "hybrid_z3_else_cot": "Hybrid: Z3, else CoT", "validated_direct_cot": "CoT, witness-validated",
-    "validated_z3_repair": "Z3+repair, witness-validated",
+    "hybrid_z3_else_cot": "Hybrid: LLM→Z3, else CoT", "hybrid_z3_repair_else_cot": "Hybrid: Z3+repair, else CoT", "validated_direct_cot": "CoT, witness-validated",
+    "validated_z3_repair": "Z3+repair, witness-validated", "validated_direct": "Direct, witness-validated",
+    "validated_z3": "LLM→Z3, witness-validated", "validated_z3_guided": "Z3 guided, witness-validated",
 }
 
 
@@ -33,6 +34,18 @@ def short_model(m: str) -> str:
 
 
 # ----------------------------------------------------------------------------- loading
+def _final_truncated(r: dict) -> bool:
+    """True if the last model reply was cut off mid-code-block (runaway generation that hit
+    the output-token limit, typically a repetition loop)."""
+    msgs = [m for m in r.get("transcript") or [] if m.get("role") == "assistant"]
+    if not msgs:
+        return False
+    text = msgs[-1].get("content", "")
+    if r.get("approach", "").startswith("z3"):
+        return text.count("```") % 2 == 1
+    return r.get("verdict") == "UNKNOWN" and text.count("```") % 2 == 1
+
+
 def load_records(include_transcripts: bool = False) -> pd.DataFrame:
     rows = []
     for path in sorted(RUNS.glob("*/records.jsonl")):
@@ -40,6 +53,7 @@ def load_records(include_transcripts: bool = False) -> pd.DataFrame:
             continue
         for line in path.open():
             r = json.loads(line)
+            r["final_truncated"] = _final_truncated(r)
             if not include_transcripts:
                 r.pop("transcript", None)
             r["run"] = path.parent.name
@@ -52,6 +66,9 @@ def load_records(include_transcripts: bool = False) -> pd.DataFrame:
     meta = pd.DataFrame([{"instance": i.id, "pair": i.pair, "tier": i.tier, "category": i.category,
                           "twin": i.twin, "label": i.label, "tags": ",".join(i.tags)} for i in load_dataset()])
     df = df.merge(meta, on="instance", how="inner")
+    # only complete (model, approach) runs are analysed; partial runs are listed in report/RUN_STATUS.md
+    full = df.groupby(["model", "approach"])["instance"].transform("nunique") >= df["instance"].nunique()
+    df = df[full | (df["model"] == "tool")].copy()
     df["correct"] = df["verdict"] == df["gold"]
     df["decided"] = df["verdict"] != "UNKNOWN"
     df["system"] = df["model"] + " | " + df["approach"]
@@ -143,22 +160,23 @@ def summary(df: pd.DataFrame, by: list[str] | None = None) -> pd.DataFrame:
 # ----------------------------------------------------------------------- derived policies
 def derived_policies(df: pd.DataFrame) -> pd.DataFrame:
     """Post-hoc systems built from existing records (no extra model calls):
-      hybrid_z3_else_cot     use the Z3-repair verdict when the script ran, else the CoT verdict
-      validated_direct_cot   report UNSAFE only if the CoT witness reproduces under the sanitizers
+      hybrid_<z3 variant>_else_cot   use the Z3 verdict (bare or repair) when the script ran, else the CoT verdict
+      validated_<approach>   report UNSAFE only if that approach's witness reproduces under the sanitizers
       validated_z3_repair    report UNSAFE only if the Z3 counterexample reproduces
     """
     out = []
     for model, g in df[df["model"] != "tool"].groupby("model"):
         piv = {a: x.set_index("instance") for a, x in g.groupby("approach")}
-        if "z3_repair" in piv and "direct_cot" in piv:
-            z, c = piv["z3_repair"], piv["direct_cot"]
-            common = z.index.intersection(c.index)
-            h = z.loc[common].copy()
-            use_cot = h["verdict"] == "UNKNOWN"
-            h.loc[use_cot, "verdict"] = c.loc[common][use_cot]["verdict"]
-            h["approach"] = "hybrid_z3_else_cot"
-            out.append(h.reset_index())
-        for a in ("direct_cot", "z3_repair"):
+        for zv in ("z3", "z3_repair"):
+            if zv in piv and "direct_cot" in piv:
+                z, c = piv[zv], piv["direct_cot"]
+                common = z.index.intersection(c.index)
+                h = z.loc[common].copy()
+                use_cot = h["verdict"] == "UNKNOWN"
+                h.loc[use_cot, "verdict"] = c.loc[common][use_cot]["verdict"]
+                h["approach"] = f"hybrid_{zv}_else_cot"
+                out.append(h.reset_index())
+        for a in APPROACH_ORDER:
             if a in piv:
                 v = piv[a].copy()
                 unconf = (v["verdict"] == "UNSAFE") & (v["witness_status"] != "confirmed")
@@ -187,6 +205,12 @@ def z3_outcomes(df: pd.DataFrame) -> pd.DataFrame:
         if st == "unsat":
             return "proved safe" if r["gold"] == "SAFE" else "missed bug (unsat)"
         et = r.get("z3_error_type") or "error"
+        if r.get("final_truncated"):
+            return "error: runaway output (token limit)"
+        atts = r.get("attempts")
+        last_err = (atts[-1].get("error") or "") if isinstance(atts, list) and atts else ""
+        if "ModuleNotFoundError" in last_err or "ImportError" in last_err:
+            return "error: hallucinated API"
         return {"syntax": "error: syntax", "name_error": "error: hallucinated API", "z3_api": "error: Z3 sort/API misuse",
                 "type_error": "error: type/operator misuse", "no_code": "error: no code", "no_solver": "error: protocol",
                 "timeout": "error: timeout", "solver_unknown": "error: solver unknown"}.get(et, "error: runtime")

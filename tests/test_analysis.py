@@ -70,8 +70,8 @@ def test_derived_policies():
     c = _records().assign(model="m", approach="direct_cot", verdict=["UNSAFE", "SAFE", "UNSAFE", "UNSAFE"],
                           witness_status=["confirmed", None, "not_reproduced", "not_reproduced"])
     d = derived_policies(pd.concat([z, c], ignore_index=True)).set_index(["approach", "instance"])["verdict"]
-    assert d["hybrid_z3_else_cot", "B-U"] == "UNSAFE"  # Z3 was UNKNOWN -> fall back to CoT
-    assert d["hybrid_z3_else_cot", "B-S"] == "UNSAFE"  # Z3 decided -> keep Z3
+    assert d["hybrid_z3_repair_else_cot", "B-U"] == "UNSAFE"  # Z3 was UNKNOWN -> fall back to CoT
+    assert d["hybrid_z3_repair_else_cot", "B-S"] == "UNSAFE"  # Z3 decided -> keep Z3
     assert d["validated_direct_cot", "B-U"] == "SAFE"  # unconfirmed UNSAFE claims are dropped
     assert d["validated_direct_cot", "A-U"] == "UNSAFE"
     assert d["validated_z3_repair", "B-S"] == "SAFE"
