@@ -1,0 +1,11 @@
+gemini-3.8-flash was NOT run beyond 4 test answers: stopped 2026-10-15 16:50 (UTC+8).
+
+Reason: Google's free tier allows only 20 requests per day per project for gemini-3.8-flash
+("generate_content_free_tier_requests, limit: 20", HTTP 429, "retry in 15h"). The evaluation needs
+about 750 requests for this model (5 approaches x 120 instances, plus repair rounds), so a free key
+would take about a month. gemini-3.5-flash-lite has no such cap here and completed all five approaches.
+
+To continue gemini-3.8-flash you need an API key whose Google project has a higher quota
+(for example one with billing enabled). With the key in .env, run the resume command below; it skips
+everything already recorded. If you only have a free key, run the same command once a day: it stops
+cleanly after 5 consecutive failures, and nothing failed is ever recorded.
