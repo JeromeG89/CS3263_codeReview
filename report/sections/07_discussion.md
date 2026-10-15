@@ -4,7 +4,7 @@
 
 **The two paradigms fail in different places.**
 - *Direct review* always answers but does not reason. Its accuracy is the same on two-line arithmetic as on nested loops, it gives both members of a minimal pair the same verdict 85–92% of the time, and it leans heavily towards "SAFE". The chain-of-thought transcripts show why prose reasoning does not fix this: the model raises the right case (`INT_MIN / -1`) and then resolves it with a false fact.
-- *Translation to Z3* does reason, through the solver. Where the model can write an executable script, the answers track the code and the preconditions. This is best seen on precondition twins, where the formal approach discriminates four times as often. On flat arithmetic it is the most accurate LLM approach (67.5% vs 57.5%). But writing the script is itself a demanding programming task, and the models we evaluated often cannot complete it: 40–60% executable for qwen, 0% for llama.
+- *Translation to Z3* does reason, through the solver. Where the model can write an executable script, the answers track the code and the preconditions. This is best seen on precondition twins, where the formal approach discriminates four times as often. On flat arithmetic it is the most accurate LLM approach (67.5% vs 57.5%). But writing the script is itself a demanding programming task, and the models we evaluated often cannot complete it: 40–60% executable for qwen, 0–2.5% for llama.
 
 This is the advantage-versus-limitation trade-off the proposal set out to measure:
 - **Accuracy of direct detection.** The LLM's own judgement is cheap, always available, and for small models no better than chance.

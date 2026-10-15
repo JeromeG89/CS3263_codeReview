@@ -9,7 +9,7 @@ _Produced by `scripts/analyze.py`; do not edit by hand._
 | llama3.2:3b      | Direct                 | 54.2% [45.3%, 62.8%]   | 10.0%             | 98.3%                | 8.3%        |              1 |            54 |         0 | 28.6%               |
 | llama3.2:3b      | Direct + CoT           | 46.7% [38.0%, 55.6%]   | 33.3%             | 60.0%                | 18.3%       |             24 |            40 |         0 | 15.9%               |
 | llama3.2:3b      | LLM→Z3                 | 0.0% [0.0%, 3.1%]      | 0.0%              | 0.0%                 | 0.0%        |              0 |             0 |       120 | –                   |
-| llama3.2:3b      | LLM→Z3 guided          | 0.0% [0.0%, 24.3%]     | 0.0%              | 0.0%                 | 0.0%        |              0 |             0 |        12 | –                   |
+| llama3.2:3b      | LLM→Z3 guided          | 1.7% [0.5%, 5.9%]      | 3.3%              | 0.0%                 | 0.0%        |              1 |             0 |       117 | 0.0%                |
 | qwen2.5-coder:7b | Direct                 | 55.8% [46.9%, 64.4%]   | 25.0%             | 86.7%                | 13.3%       |              8 |            45 |         0 | 47.8%               |
 | qwen2.5-coder:7b | Direct + CoT           | 56.7% [47.7%, 65.2%]   | 20.0%             | 93.3%                | 16.7%       |              4 |            48 |         0 | 62.5%               |
 | qwen2.5-coder:7b | LLM→Z3                 | 40.0% [31.7%, 48.9%]   | 45.0%             | 35.0%                | 21.7%       |             15 |             9 |        48 | 38.1%               |
@@ -28,7 +28,7 @@ _Produced by `scripts/analyze.py`; do not edit by hand._
 | llama3.2:3b      | CoT, witness-validated       | 55.8% [46.9%, 64.4%] | 11.7%             | 100.0%               | 11.7%       |              0 |            53 |         0 | 100.0%              |
 | llama3.2:3b      | Direct, witness-validated    | 51.7% [42.8%, 60.4%] | 3.3%              | 100.0%               | 3.3%        |              0 |            58 |         0 | 100.0%              |
 | llama3.2:3b      | LLM→Z3, witness-validated    | 0.0% [0.0%, 3.1%]    | 0.0%              | 0.0%                 | 0.0%        |              0 |             0 |       120 | –                   |
-| llama3.2:3b      | Z3 guided, witness-validated | 0.0% [0.0%, 24.3%]   | 0.0%              | 0.0%                 | 0.0%        |              0 |             0 |        12 | –                   |
+| llama3.2:3b      | Z3 guided, witness-validated | 0.8% [0.1%, 4.6%]    | 0.0%              | 1.7%                 | 0.0%        |              0 |             2 |       117 | –                   |
 | qwen2.5-coder:7b | Hybrid: LLM→Z3, else CoT     | 63.3% [54.4%, 71.4%] | 53.3%             | 73.3%                | 35.0%       |             16 |            28 |         0 | 33.3%               |
 | qwen2.5-coder:7b | Hybrid: Z3+repair, else CoT  | 56.7% [47.7%, 65.2%] | 40.0%             | 73.3%                | 26.7%       |             16 |            36 |         0 | 30.0%               |
 | qwen2.5-coder:7b | CoT, witness-validated       | 58.3% [49.4%, 66.8%] | 16.7%             | 100.0%               | 16.7%       |              0 |            50 |         0 | 100.0%              |
@@ -39,17 +39,17 @@ _Produced by `scripts/analyze.py`; do not edit by hand._
 
 ## Accuracy by tier
 
-| model            | approach               |   T1 |     T2 |     T3 |     T4 |
-|:-----------------|:-----------------------|-----:|-------:|-------:|-------:|
-| llama3.2:3b      | Direct                 | 0.55 |   0.55 |   0.54 |   0.50 |
-| llama3.2:3b      | Direct + CoT           | 0.47 |   0.45 |   0.50 |   0.44 |
-| llama3.2:3b      | LLM→Z3                 | 0.00 |   0.00 |   0.00 |   0.00 |
-| llama3.2:3b      | LLM→Z3 guided          | 0.00 | nan    | nan    | nan    |
-| qwen2.5-coder:7b | Direct                 | 0.57 |   0.53 |   0.58 |   0.56 |
-| qwen2.5-coder:7b | Direct + CoT           | 0.55 |   0.58 |   0.62 |   0.50 |
-| qwen2.5-coder:7b | LLM→Z3                 | 0.68 |   0.39 |   0.19 |   0.06 |
-| qwen2.5-coder:7b | LLM→Z3 guided          | 0.42 |   0.24 |   0.08 |   0.00 |
-| qwen2.5-coder:7b | LLM→Z3 guided + repair | 0.47 |   0.32 |   0.08 |   0.00 |
+| model            | approach               |   T1 |   T2 |   T3 |   T4 |
+|:-----------------|:-----------------------|-----:|-----:|-----:|-----:|
+| llama3.2:3b      | Direct                 | 0.55 | 0.55 | 0.54 | 0.50 |
+| llama3.2:3b      | Direct + CoT           | 0.47 | 0.45 | 0.50 | 0.44 |
+| llama3.2:3b      | LLM→Z3                 | 0.00 | 0.00 | 0.00 | 0.00 |
+| llama3.2:3b      | LLM→Z3 guided          | 0.00 | 0.03 | 0.04 | 0.00 |
+| qwen2.5-coder:7b | Direct                 | 0.57 | 0.53 | 0.58 | 0.56 |
+| qwen2.5-coder:7b | Direct + CoT           | 0.55 | 0.58 | 0.62 | 0.50 |
+| qwen2.5-coder:7b | LLM→Z3                 | 0.68 | 0.39 | 0.19 | 0.06 |
+| qwen2.5-coder:7b | LLM→Z3 guided          | 0.42 | 0.24 | 0.08 | 0.00 |
+| qwen2.5-coder:7b | LLM→Z3 guided + repair | 0.47 | 0.32 | 0.08 | 0.00 |
 
 ## Accuracy by bug class
 
@@ -58,7 +58,7 @@ _Produced by `scripts/analyze.py`; do not edit by hand._
 | llama3.2:3b      | Direct                 |     0.55 |       0.58 |       0.53 |    0.50 |
 | llama3.2:3b      | Direct + CoT           |     0.47 |       0.35 |       0.50 |    0.55 |
 | llama3.2:3b      | LLM→Z3                 |     0.00 |       0.00 |       0.00 |    0.00 |
-| llama3.2:3b      | LLM→Z3 guided          |     0.00 |       0.00 |     nan    |  nan    |
+| llama3.2:3b      | LLM→Z3 guided          |     0.03 |       0.00 |       0.03 |    0.00 |
 | qwen2.5-coder:7b | Direct                 |     0.55 |       0.62 |       0.56 |    0.50 |
 | qwen2.5-coder:7b | Direct + CoT           |     0.55 |       0.62 |       0.61 |    0.45 |
 | qwen2.5-coder:7b | LLM→Z3                 |     0.45 |       0.42 |       0.31 |    0.45 |
@@ -89,7 +89,7 @@ _Produced by `scripts/analyze.py`; do not edit by hand._
 |:-----------------|:-----------|:-------------------|----:|--------:|--------:|-----------------:|-----------------:|------:|---------:|
 | llama3.2:3b      | direct     | direct_cot         | 120 |   0.542 |   0.467 |               27 |               18 | 0.233 |    1.000 |
 | llama3.2:3b      | direct     | z3                 | 120 |   0.542 |   0.000 |               65 |                0 | 0.000 |    0.000 |
-| llama3.2:3b      | z3         | z3_guided          |  12 |   0.000 |   0.000 |                0 |                0 | 1.000 |    1.000 |
+| llama3.2:3b      | z3         | z3_guided          | 120 |   0.000 |   0.017 |                0 |                2 | 0.500 |    1.000 |
 | llama3.2:3b      | direct     | hybrid_z3_else_cot | 120 |   0.542 |   0.467 |               27 |               18 | 0.233 |    1.000 |
 | llama3.2:3b      | direct_cot | hybrid_z3_else_cot | 120 |   0.467 |   0.467 |                0 |                0 | 1.000 |    1.000 |
 | qwen2.5-coder:7b | direct     | direct_cot         | 120 |   0.558 |   0.567 |               14 |               15 | 1.000 |    1.000 |
@@ -108,14 +108,14 @@ _Produced by `scripts/analyze.py`; do not edit by hand._
 | direct     | llama3.2:3b | qwen2.5-coder:7b | 120 |   0.542 |   0.558 | 0.832 |
 | direct_cot | llama3.2:3b | qwen2.5-coder:7b | 120 |   0.467 |   0.567 | 0.119 |
 | z3         | llama3.2:3b | qwen2.5-coder:7b | 120 |   0.000 |   0.400 | 0.000 |
-| z3_guided  | llama3.2:3b | qwen2.5-coder:7b |  12 |   0.000 |   0.667 | 0.008 |
+| z3_guided  | llama3.2:3b | qwen2.5-coder:7b | 120 |   0.017 |   0.233 | 0.000 |
 
 ## Z3 pipeline outcomes (final attempt)
 
 | model            | approach   |   bug found (cex confirmed) |   bug found (cex not reproduced) |   error: Z3 sort/API misuse |   error: hallucinated API |   error: runaway output (token limit) |   error: runtime |   error: syntax |   error: type/operator misuse |   false alarm (spurious cex) |   missed bug (unsat) |   proved safe |
 |:-----------------|:-----------|----------------------------:|---------------------------------:|----------------------------:|--------------------------:|--------------------------------------:|-----------------:|----------------:|------------------------------:|-----------------------------:|---------------------:|--------------:|
-| llama3.2:3b      | z3         |                           0 |                                0 |                           0 |                         0 |                                    84 |               31 |               5 |                             0 |                            0 |                    0 |             0 |
-| llama3.2:3b      | z3_guided  |                           0 |                                0 |                           1 |                         2 |                                     8 |                0 |               0 |                             1 |                            0 |                    0 |             0 |
+| llama3.2:3b      | z3         |                           0 |                                0 |                           0 |                        31 |                                    84 |                0 |               5 |                             0 |                            0 |                    0 |             0 |
+| llama3.2:3b      | z3_guided  |                           0 |                                2 |                           4 |                         8 |                                    84 |                5 |               6 |                            10 |                            1 |                    0 |             0 |
 | qwen2.5-coder:7b | z3         |                          16 |                               11 |                           9 |                        11 |                                     8 |                0 |               3 |                            17 |                           15 |                    9 |            21 |
 | qwen2.5-coder:7b | z3_guided  |                          11 |                                6 |                           6 |                        30 |                                    12 |                1 |               7 |                            16 |                            9 |                   11 |            11 |
 | qwen2.5-coder:7b | z3_repair  |                          12 |                                8 |                           8 |                        27 |                                    12 |                0 |               3 |                            11 |                           14 |                   12 |            13 |
@@ -134,7 +134,7 @@ _Produced by `scripts/analyze.py`; do not edit by hand._
 | model            | approach   |   n |   acc |   bitvec |   int_sort |   srem |   ovf_helpers |   push_pop |   lines |
 |:-----------------|:-----------|----:|------:|---------:|-----------:|-------:|--------------:|-----------:|--------:|
 | llama3.2:3b      | z3         | 120 |  0.00 |     0.69 |       1.00 |   0.00 |          0.00 |       0.01 |  122.00 |
-| llama3.2:3b      | z3_guided  |  12 |  0.00 |     0.83 |       0.33 |   0.00 |          0.83 |       0.00 |   83.00 |
+| llama3.2:3b      | z3_guided  | 120 |  0.02 |     0.69 |       0.48 |   0.00 |          0.73 |       0.00 |  113.00 |
 | qwen2.5-coder:7b | z3         | 120 |  0.40 |     0.07 |       0.95 |   0.00 |          0.00 |       0.00 |   31.00 |
 | qwen2.5-coder:7b | z3_guided  | 120 |  0.23 |     1.00 |       0.00 |   0.00 |          0.62 |       0.00 |   25.00 |
 | qwen2.5-coder:7b | z3_repair  | 120 |  0.28 |     1.00 |       0.00 |   0.00 |          0.62 |       0.00 |   25.00 |
@@ -143,13 +143,13 @@ _Produced by `scripts/analyze.py`; do not edit by hand._
 
 | feature               | present   |   n |   accuracy |
 |:----------------------|:----------|----:|-----------:|
-| uses_bitvec           | True      | 342 |       0.19 |
-| uses_bitvec           | False     | 150 |       0.30 |
-| uses_int_sort         | True      | 238 |       0.19 |
-| uses_int_sort         | False     | 254 |       0.25 |
-| uses_overflow_helpers | True      | 158 |       0.18 |
-| uses_overflow_helpers | False     | 334 |       0.24 |
-| uses_srem             | False     | 492 |       0.22 |
+| uses_bitvec           | True      | 415 |       0.16 |
+| uses_bitvec           | False     | 185 |       0.24 |
+| uses_int_sort         | True      | 292 |       0.15 |
+| uses_int_sort         | False     | 308 |       0.21 |
+| uses_overflow_helpers | True      | 236 |       0.12 |
+| uses_overflow_helpers | False     | 364 |       0.23 |
+| uses_srem             | False     | 600 |       0.18 |
 
 ## Cost
 
@@ -158,7 +158,7 @@ _Produced by `scripts/analyze.py`; do not edit by hand._
 | llama3.2:3b      | Direct                 |             1.00 |             41.53 |          2.73 |
 | llama3.2:3b      | Direct + CoT           |             1.00 |            598.71 |         11.07 |
 | llama3.2:3b      | LLM→Z3                 |             1.00 |           2355.13 |         44.76 |
-| llama3.2:3b      | LLM→Z3 guided          |             1.00 |           2251.08 |         46.89 |
+| llama3.2:3b      | LLM→Z3 guided          |             1.00 |           2481.22 |         51.12 |
 | qwen2.5-coder:7b | Direct                 |             1.00 |             60.76 |          3.32 |
 | qwen2.5-coder:7b | Direct + CoT           |             1.00 |            661.32 |         27.29 |
 | qwen2.5-coder:7b | LLM→Z3                 |             1.00 |            537.83 |         21.28 |

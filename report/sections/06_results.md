@@ -37,7 +37,7 @@ _(The non-LLM reference points are the right-hand panel of the accuracy figure i
 | llama 3B | Direct | 54.2% [45.3, 62.8] | 10.0% | 98.3% | 0 | 8.3% | 91.7% |
 | llama 3B | Direct + CoT | 46.7% [38.0, 55.6] | 33.3% | 60.0% | 0 | 18.3% | 56.7% |
 | llama 3B | LLM→Z3 | 0.0% [0.0, 3.1] | 0% | 0% | 120 | 0% | – |
-| llama 3B | LLM→Z3 guided | _run in progress_ | | | | | |
+| llama 3B | LLM→Z3 guided | 1.7% [0.5, 5.9] | 3.3% | 0% | 117 | 0% | 98.3% |
 
 "No answer" counts UNKNOWN verdicts (the script failed, or no verdict could be parsed). UNKNOWN is scored as wrong but is neither a false alarm nor a missed bug.
 
@@ -90,21 +90,24 @@ Outcome of the final script, per instance:
 
 | Outcome | qwen LLM→Z3 | qwen guided | qwen guided + repair | llama LLM→Z3 | llama guided |
 |---|---|---|---|---|---|
-| Proved safe (correct UNSAT) | 21 | 11 | 13 | 0 | … |
-| Bug found, counterexample confirmed | 16 | 11 | 12 | 0 | … |
-| Bug found, counterexample not reproduced | 11 | 6 | 8 | 0 | … |
-| False alarm (SAT on a SAFE instance) | 15 | 9 | 14 | 0 | … |
-| Missed bug (UNSAT on an UNSAFE instance) | 9 | 11 | 12 | 0 | … |
-| Error: runaway output (hit token limit) | 8 | 12 | 12 | 84 | … |
-| Error: hallucinated API / module | 11 | 30 | 27 | 36 | … |
-| Error: type / operator misuse | 17 | 16 | 11 | 0 | … |
-| Error: Z3 sort / API misuse | 9 | 6 | 8 | 0 | … |
-| Error: syntax | 3 | 7 | 3 | 0 | … |
-| **Executable (SAT or UNSAT)** | **72 (60%)** | **48 (40%)** | **59 (49%)** | **0 (0%)** | … |
+| Proved safe (correct UNSAT) | 21 | 11 | 13 | 0 | 0 |
+| Bug found, counterexample confirmed | 16 | 11 | 12 | 0 | 0 |
+| Bug found, counterexample not reproduced | 11 | 6 | 8 | 0 | 2 |
+| False alarm (SAT on a SAFE instance) | 15 | 9 | 14 | 0 | 1 |
+| Missed bug (UNSAT on an UNSAFE instance) | 9 | 11 | 12 | 0 | 0 |
+| Error: runaway output (hit token limit) | 8 | 12 | 12 | 84 | 84 |
+| Error: hallucinated API / module | 11 | 30 | 27 | 31 | 8 |
+| Error: type / operator misuse | 17 | 16 | 11 | 0 | 10 |
+| Error: Z3 sort / API misuse | 9 | 6 | 8 | 0 | 4 |
+| Error: syntax | 3 | 7 | 3 | 5 | 6 |
+| Error: other runtime | 0 | 1 | 0 | 0 | 5 |
+| **Executable (SAT or UNSAT)** | **72 (60%)** | **48 (40%)** | **59 (49%)** | **0 (0%)** | **3 (2.5%)** |
 
 **Executability is the bottleneck.**
-- qwen's scripts run 40–60% of the time. llama's never run.
-- llama's scripts fail in two ways. They import a module that does not exist (`from z3.solvers import Solver`), or they fall into a repetition loop until the 3,072-token limit cuts them off mid-line.
+- qwen's scripts run 40–60% of the time. llama's bare scripts never run, and only 3 of its 120 guided scripts do.
+- llama's scripts fail in two ways.
+  - **Invented import:** every one of its 120 bare scripts contains `from z3.solvers import Solver`, a module that does not exist. 40 failed on exactly that line; the rest broke earlier.
+  - **Runaway output:** 84 of 120 scripts (in both the bare and guided variants) fall into a repetition loop until the 3,072-token limit cuts them off mid-line.
 - qwen's dominant errors:
   - Python's `|`/`&` applied to Z3 comparisons (e.g. `h < 0 | h >= size`), which Python parses as a chained comparison on `(0 | h)`;
   - hallucinated API names. The most frequent is `BVSDivNoUnderflow` (59 uses across attempts): a plausible but non-existent extrapolation from the real `BVAddNoUnderflow` / `BVMulNoUnderflow`.
@@ -149,7 +152,7 @@ Following it backfired in three ways:
 2. **Runaway generation.** Listing a violation per helper invites enumeration. The model kept appending near-identical `And(reach, Not(BVSDiv…(…, True, True, True)))` lines until the 3,072-token limit. Runaway outputs rose from 8 to 12.
 3. **Harder sorts.** Bit-vector scripts are more exact but less forgiving. Scripts using the helpers were *less* often correct (16% vs 35%), largely because they failed to execute.
 
-For llama, guidance did not rescue a single script either (run in progress).
+For llama, guidance removed the invented `z3.solvers` import (0 of 120 guided scripts contain it) but not the repetition loops (still 84 of 120). Only 3 guided scripts executed, and accuracy rose from 0% to 1.7% (2 of 120, both unconfirmed bug reports; p = 0.5).
 
 **Execution feedback helped only slightly.**
 - Up to three repair rounds raised qwen from 23.3% to 27.5% (+5 instances, p = 0.06, not significant) and executability from 40% to 49%.
@@ -164,7 +167,7 @@ For llama, guidance did not rescue a single script either (run in progress).
 
 **Why so little?** With greedy decoding, **210 of the 253 repair attempts (83%) resubmitted exactly the same script as before**, despite an error message and a "did you mean" hint naming the correct function. In all 59 cases where the model called the non-existent `BVSDivNoUnderflow`, the error message listed the correct `BVSDivNoOverflow` among the "similar existing names", yet the model reproduced its earlier answer.
 
-We did not run llama's repair variant. Its guided first attempts were all unexecutable or runaway, and each repair round costs up to a minute of generation per instance, so the expected yield did not justify about five hours of compute. The repair loop's first attempt is identical to `z3_guided` by construction, so llama's guided results bound what repair could start from.
+We did not run llama's repair variant. Only 3 of its 120 guided first attempts executed (84 were runaway outputs), and each repair round costs up to a minute of generation per instance, so the expected yield did not justify about five hours of compute. The repair loop's first attempt is identical to `z3_guided` by construction, so llama's guided results bound what repair could start from.
 
 ## 6.7 Significance
 

@@ -10,7 +10,7 @@ Large language models are increasingly used as automated code reviewers, but the
 
 **Translation to Z3:**
 - *Where it runs, it reasons.* qwen's bare translation is the most accurate LLM approach on flat arithmetic (67.5%) and discriminates precondition twins four times as often as direct review.
-- *It often does not run.* Only 60% of qwen's scripts execute and none of llama's, because of hallucinated APIs, Python/Z3 operator confusion and runaway repetition.
+- *It often does not run.* Only 60% of qwen's scripts execute, and almost none of llama's (0 of 120 bare, 3 of 120 guided), because of hallucinated APIs, Python/Z3 operator confusion and runaway repetition.
 - *Guidance and repair do not fix this.* Adding C-to-Z3 guidance lowered qwen's accuracy (40% → 23%). Execution-feedback repair recovered little, because 83% of greedy repair attempts repeated the previous script.
 
 **Combining the paradigms helps.** Using Z3 when its script runs and chain of thought otherwise gives the best LLM system: 63% accuracy, doubling recall. Re-executing counterexamples makes every reported bug genuine (precision 100%).

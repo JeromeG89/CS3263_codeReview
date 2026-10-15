@@ -574,7 +574,7 @@ The full results, with every table and figure, are in **`report/report.md` §6**
 | llama 3B | Direct | 54.2% [45.3, 62.8] | 10.0% | 98.3% | 0 |
 | llama 3B | Direct + CoT | 46.7% [38.0, 55.6] | 33.3% | 60.0% | 0 |
 | llama 3B | LLM→Z3 | 0.0% [0.0, 3.1] | 0% | 0% | 120 |
-| llama 3B | LLM→Z3 guided | _run in progress; filled in when complete_ | | | |
+| llama 3B | LLM→Z3 guided | 1.7% [0.5, 5.9] | 3.3% | 0% | 117 |
 | qwen 7B | **Hybrid: Z3 if it runs, else CoT** | **63.3%** | **53.3%** | 73.3% | 0 |
 | tool | Gold Z3 / CBMC | 100% / 100% | 100% | 100% | 0 |
 | tool | Dictionary / random fuzzing | 98.3% / 85.0% | 96.7% / 70.0% | 100% | 0 |
@@ -586,8 +586,8 @@ The full results, with every table and figure, are in **`report/report.md` §6**
    - On its 72 executable instances it scores 66.7% vs 58.3% for direct review on the same instances (not significant).
    - It gets both precondition twins right in 35% of pairs vs 9% for direct review.
 3. **Executability is the bottleneck.**
-   - qwen's scripts run 60% of the time and llama's 0%.
-   - Causes: invented APIs (`BVSDivNoUnderflow` ×59, `from z3.solvers import Solver`), Python `|` on Z3 Booleans, and repetition loops that hit the 3,072-token limit.
+   - qwen's scripts run 60% of the time; llama's bare scripts never run and only 3 of 120 guided scripts do.
+   - Causes: invented APIs (`BVSDivNoUnderflow` ×59; `from z3.solvers import Solver` in all 120 of llama's bare scripts), Python `|` on Z3 Booleans, and repetition loops that hit the 3,072-token limit (84 of llama's 120 scripts in both variants).
    - Accuracy collapses on loops (19%) and helper functions (6%).
 4. **Guidance hurt qwen** (40% → 23%, p = 0.001). The model adopted bit-vectors and the overflow helpers, then invented more helpers and enumerated until the output limit. No script ever used `SRem`.
 5. **Repair barely helped** (+5 instances). 83% of greedy repair attempts were identical to the previous script, even though the error listed the correct name.
