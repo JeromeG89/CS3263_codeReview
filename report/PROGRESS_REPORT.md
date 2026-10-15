@@ -1,5 +1,7 @@
 # Progress report — CS3263 "AI Assistant for Software Engineering"
 
+> **Superseded:** this was the mid-project status note (14 Oct). For final results see `report/report.md`, the full write-up `report/IMPLEMENTATION.md`, and the team page.
+
 *Status as of 14 Oct 2026, evening. Written for the team (Jerome, Anirudh, Joon Xiang). Results in §7 are preliminary unless marked final.*
 
 ---
