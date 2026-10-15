@@ -562,6 +562,8 @@ The full results, with every table and figure, are in **`report/REPORT.md` §6**
 **Run coverage:**
 - qwen2.5-coder 7B: all 5 approaches × 120 instances.
 - llama3.2 3B: direct, CoT, bare Z3 and guided Z3. Its repair variant was skipped (§6.6 of the report).
+- Gemini 3.5 Flash-Lite: all 5 approaches × 120 instances.
+- Gemini 3.8 Flash: not run beyond 4 test answers. Google's free tier allows 20 requests a day for it (see `report/RUN_STATUS.md`).
 - Baselines: all 120 instances.
 
 | Model | Approach | Accuracy [95% CI] | Recall | Specificity | No answer |
@@ -575,32 +577,39 @@ The full results, with every table and figure, are in **`report/REPORT.md` §6**
 | llama 3B | Direct + CoT | 46.7% [38.0, 55.6] | 33.3% | 60.0% | 0 |
 | llama 3B | LLM→Z3 | 0.0% [0.0, 3.1] | 0% | 0% | 120 |
 | llama 3B | LLM→Z3 guided | 1.7% [0.5, 5.9] | 3.3% | 0% | 117 |
+| Gemini 3.5 Flash-Lite | Direct | 76.7% [68.3, 83.3] | 78.3% | 75.0% | 0 |
+| Gemini 3.5 Flash-Lite | Direct + CoT | **98.3%** [94.1, 99.5] | 96.7% | 100% | 0 |
+| Gemini 3.5 Flash-Lite | LLM→Z3 | 78.3% [70.1, 84.8] | 78.3% | 78.3% | 23 |
+| Gemini 3.5 Flash-Lite | LLM→Z3 guided | 82.5% [74.7, 88.3] | 83.3% | 81.7% | 19 |
+| Gemini 3.5 Flash-Lite | LLM→Z3 guided + repair | **97.5%** [92.9, 99.1] | 98.3% | 96.7% | 2 |
+| Gemini 3.8 Flash | all approaches | not run (free-tier cap, see `report/RUN_STATUS.md`) | | | |
 | qwen 7B | **Hybrid: Z3 if it runs, else CoT** | **63.3%** | **53.3%** | 73.3% | 0 |
 | tool | Gold Z3 / CBMC | 100% / 100% | 100% | 100% | 0 |
 | tool | Dictionary / random fuzzing | 98.3% / 85.0% | 96.7% / 70.0% | 100% | 0 |
 
 **Headline findings:**
-1. **Direct review is at chance and biased towards "safe".** Accuracy is the same at every tier. qwen gives both twins of a pair the same verdict in 85% of pairs; llama in 92%. CoT does not help (qwen p = 1.0).
-2. **Translation reasons when the script runs.**
-   - qwen's bare LLM→Z3 scores 67.5% on flat arithmetic vs 57.5% for direct review.
-   - On its 72 executable instances it scores 66.7% vs 58.3% for direct review on the same instances (not significant).
-   - It gets both precondition twins right in 35% of pairs vs 9% for direct review.
-3. **Executability is the bottleneck.**
-   - qwen's scripts run 60% of the time; llama's bare scripts never run and only 3 of 120 guided scripts do.
-   - Causes: invented APIs (`BVSDivNoUnderflow` ×59; `from z3.solvers import Solver` in all 120 of llama's bare scripts), Python `|` on Z3 Booleans, and repetition loops that hit the 3,072-token limit (84 of llama's 120 scripts in both variants).
-   - Accuracy collapses on loops (19%) and helper functions (6%).
-4. **Guidance hurt qwen** (40% → 23%, p = 0.001). The model adopted bit-vectors and the overflow helpers, then invented more helpers and enumerated until the output limit. No script ever used `SRem`.
-5. **Repair barely helped** (+5 instances). 83% of greedy repair attempts were identical to the previous script, even though the error listed the correct name.
-6. **Counterexample replay is a free filter.** It caught all 15 false alarms of bare LLM→Z3; witness-validated reporting has 100% precision for every approach.
-7. **Classical tools win.** CBMC and the gold encodings decide all 120 instances in under 2 s each.
+1. **Small models: direct review is at chance and biased towards "safe".** Accuracy is the same at every tier. qwen gives both twins of a pair the same verdict in 85% of pairs; llama in 92%. CoT does not help (qwen p = 1.0).
+2. **Small models: translation reasons when the script runs, but often it does not.**
+   - qwen's bare LLM→Z3 scores 67.5% on flat arithmetic vs 57.5% for direct review, and gets both precondition twins right in 35% of pairs vs 9%.
+   - But qwen's scripts run 60% of the time; llama's bare scripts never run and only 3 of 120 guided scripts do.
+   - Causes: invented APIs (`BVSDivNoUnderflow` ×59; `from z3.solvers import Solver` in all 120 of llama's bare scripts), Python `|` on Z3 Booleans, and repetition loops that hit the 3,072-token limit.
+3. **Small models: guidance hurt qwen** (40% → 23%, p = 0.001), and **repair barely helped** (+5 instances; 83% of greedy repair attempts were identical to the previous script).
+4. **A stronger model reverses this (Gemini 3.5 Flash-Lite).**
+   - Direct 76.7%; **CoT 98.3%**; bare Z3 78.3%; guided 82.5%; **guided + repair 97.5%**.
+   - Guidance helps (+4 points) and repair works: +15 points (p < 10⁻⁴), 98% of final scripts execute, 0 of 32 repair attempts repeated the previous script.
+   - CoT and Z3 + repair are tied (p = 1.0). Both report only confirmed bugs. Hybrid "Z3 + repair, else CoT": 99.2%.
+5. **Counterexample replay is a free filter** for every approach: witness-validated reporting has 100% precision.
+6. **Classical tools win.** CBMC and the gold encodings decide all 120 instances in under 2 s each.
 
 ## 17. Discussion
 
 The full discussion is in **`report/REPORT.md` §7**; Responsible AI is §8 and threats to validity §9. In short:
 
-- **The two paradigms fail differently.** Direct review always answers but does not reason. Translation reasons through the solver but often cannot produce a working script.
+- **The answer depends on the model.** For small models, direct review always answers but does not reason, while translation reasons through the solver but often cannot produce a working script. For Gemini 3.5 Flash-Lite, chain of thought (98.3%) and Z3 + repair (97.5%) are tied, and both beat direct answers (76.7%).
+- **The same prompt helped one model and hurt another.** Guidance cut qwen from 40% to 23% but raised Gemini from 78% to 82.5%; repair feedback was ignored by qwen and used by Gemini.
+- **For a strong model, the Z3 pipeline's value is auditability, not accuracy.** The "safe" verdict comes with a specification and a solver proof that can be inspected and cross-checked.
 - **The proposal's fallback scope (flat arithmetic) is exactly where translation works** for small models.
-- **"Knowledge required by the tool"** fails in three layers: API names, host-language (Python) semantics, and C semantics. Supplying more API knowledge to a small model fed hallucination and runaway generation rather than fixing it.
+- **"Knowledge required by the tool"** fails in three layers for small models: API names, host-language (Python) semantics, and C semantics.
 - **The key Responsible AI point.** Bug reports can be checked automatically by replay, but "safe" verdicts cannot. An LLM's "looks safe" carries no evidence, and an UNSAT proves only the formula the model wrote.
 - **Recommended pipeline.** Use the LLM to draft specifications, use a sound tool to decide, act only on confirmed counterexamples, and show the specification behind any "safe" verdict.
 

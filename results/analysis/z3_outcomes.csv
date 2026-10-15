@@ -1,6 +1,9 @@
-model,approach,bug found (cex confirmed),bug found (cex not reproduced),error: Z3 sort/API misuse,error: hallucinated API,error: runaway output (token limit),error: runtime,error: syntax,error: type/operator misuse,false alarm (spurious cex),missed bug (unsat),proved safe
-ollama:llama3.2:3b,z3,0,0,0,31,84,0,5,0,0,0,0
-ollama:llama3.2:3b,z3_guided,0,2,4,8,84,5,6,10,1,0,0
-ollama:qwen2.5-coder:7b,z3,16,11,9,11,8,0,3,17,15,9,21
-ollama:qwen2.5-coder:7b,z3_guided,11,6,6,30,12,1,7,16,9,11,11
-ollama:qwen2.5-coder:7b,z3_repair,12,8,8,27,12,0,3,11,14,12,13
+model,approach,bug found (cex confirmed),bug found (cex not reproduced),error: Z3 sort/API misuse,error: hallucinated API,error: runaway output (token limit),error: runtime,error: solver unknown,error: syntax,error: type/operator misuse,false alarm (spurious cex),missed bug (unsat),proved safe
+gemini:gemini-3.5-flash-lite,z3,47,0,4,11,0,3,1,2,2,1,2,47
+gemini:gemini-3.5-flash-lite,z3_guided,50,0,0,9,0,0,3,2,5,2,0,49
+gemini:gemini-3.5-flash-lite,z3_repair,59,0,0,0,0,0,2,0,0,0,1,58
+ollama:llama3.2:3b,z3,0,0,0,31,84,0,0,5,0,0,0,0
+ollama:llama3.2:3b,z3_guided,0,2,4,8,84,5,0,6,10,1,0,0
+ollama:qwen2.5-coder:7b,z3,16,11,9,11,8,0,0,3,17,15,9,21
+ollama:qwen2.5-coder:7b,z3_guided,11,6,6,30,12,1,0,7,16,9,11,11
+ollama:qwen2.5-coder:7b,z3_repair,12,8,8,27,12,0,0,3,11,14,12,13

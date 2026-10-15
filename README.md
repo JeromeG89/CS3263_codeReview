@@ -48,9 +48,10 @@ The quickest way to see what each section of the two hand-edited documents cover
 - **Done:**
   - qwen2.5-coder 7B: all 5 approaches.
   - llama3.2 3B: 4 approaches; the repair variant was skipped by decision.
+  - Gemini 3.5 Flash-Lite: all 5 approaches (CoT 98.3%, Z3 + repair 97.5%).
   - Non-AI baselines: CBMC, reference Z3, fuzzing.
   - Dataset validation: 120/120.
-- **Gemini:** `gemini-3.5-flash-lite` and `gemini-3.8-flash`. See `report/RUN_STATUS.md` for how far it got and how to resume.
+- **Not done: `gemini-3.8-flash`.** Google's free tier allows only 20 requests per day for it, and it needs about 750. `report/RUN_STATUS.md` explains this and gives the command to continue with a key that has a higher quota. When it is done, add its rows to `REPORT.md` §6.2 and §6.9 and remove the run-coverage notice at the top of §6.
 - **Still to do:** the 10-page course version of the report, and the presentation (week of 9 Nov). The report is due 13 Nov.
 
 ---
@@ -61,7 +62,7 @@ The quickest way to see what each section of the two hand-edited documents cover
 configs/                 run configurations (models, approaches, workers, repair budget)
   local.yaml             qwen2.5-coder:7b (+ llama3.2:3b) via Ollama
   local_llama.yaml       llama3.2:3b only (the run used for llama's results)
-  gemini.yaml            gemini-3.5-flash-lite + gemini-3.8-flash via the Gemini API
+  gemini.yaml            gemini-3.5-flash-lite (done) + gemini-3.8-flash (free-tier cap) via the Gemini API
   smoke.yaml             quick end-to-end check (records excluded from analysis)
 dataset/
   instances/tier{1..4}.yaml   the 120 evaluation instances
