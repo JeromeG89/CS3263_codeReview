@@ -152,7 +152,7 @@ def fig_category_heatmap(sc: pd.DataFrame, tools_c: pd.DataFrame):
 
 
 OUTCOME_ORDER = ["proved safe", "bug found (cex confirmed)", "bug found (cex not reproduced)",
-                 "false alarm (spurious cex)", "missed bug (unsat)", "error: hallucinated API",
+                 "false alarm (spurious cex)", "missed bug (unsat)", "error: runaway output (token limit)", "error: hallucinated API",
                  "error: type/operator misuse", "error: Z3 sort/API misuse", "error: syntax", "error: runtime",
                  "error: no code", "error: protocol", "error: timeout", "error: solver unknown"]
 OUTCOME_COLOR = {"proved safe": SLOTS[0], "bug found (cex confirmed)": SLOTS[2],
@@ -245,7 +245,8 @@ def main():
     sd = summary(dp) if len(dp) else pd.DataFrame()
     comps = [("direct", "direct_cot"), ("direct", "z3"), ("direct_cot", "z3_repair"), ("z3", "z3_guided"),
              ("z3_guided", "z3_repair"), ("direct", "z3_repair")]
-    pt = pairwise_tests(llm, comps)
+    comps += [("direct", "hybrid_z3_else_cot"), ("direct_cot", "hybrid_z3_else_cot")]
+    pt = pairwise_tests(pd.concat([llm, dp], ignore_index=True) if len(dp) else llm, comps)
     pt.to_csv(OUT / "mcnemar.csv", index=False)
     cm = cross_model_tests(llm, APPROACH_ORDER)
     zo = z3_outcomes(llm)
