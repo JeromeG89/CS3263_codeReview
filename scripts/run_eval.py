@@ -69,12 +69,25 @@ def main():
     lock = threading.Lock()
     t_start = time.time()
 
+    state = {"api_failures": 0, "stopped": False}
+    max_failures = int(cfg.get("max_consecutive_api_failures", 5))
+
     def work(job):
         llm, approach, inst, sample = job
+        if state["stopped"]:
+            return None
         t0 = time.time()
         rec = APPROACHES[approach](llm, inst, example=example, max_repairs=cfg.get("max_repairs", 3))
         rec.update(sample=sample, gold=inst.gold_verdict, wall_s=round(time.time() - t0, 2))
         with lock:
+            if rec.get("error"):  # the API call itself failed (quota, network): never record it, retry next run
+                state["api_failures"] += 1
+                if state["api_failures"] >= max_failures and not state["stopped"]:
+                    state["stopped"] = True
+                    print(f"stopping: {max_failures} consecutive API failures (last: {rec['error'][:300]}). "
+                          "Re-run the same command later to resume.", flush=True)
+                return None
+            state["api_failures"] = 0
             with out_path.open("a") as f:
                 f.write(json.dumps(rec) + "\n")
         return rec
@@ -87,6 +100,8 @@ def main():
                 rec = fut.result()
             except Exception as exc:  # noqa: BLE001
                 print(f"[{k}/{len(jobs)}] job crashed: {exc!r}", flush=True)
+                continue
+            if rec is None:
                 continue
             n_ok += rec["verdict"] == rec["gold"]
             el = time.time() - t_start

@@ -10,8 +10,8 @@ run_name: gemini
 workers: 2
 max_repairs: 3
 models:
-  - {provider: gemini, model: "gemini-2.5-flash-lite", max_tokens: 4096, temperature: 0.0, thinking_budget: 0, rpm: 10}
-  - {provider: gemini, model: "gemini-2.5-flash", max_tokens: 4096, temperature: 0.0, thinking_budget: 0, rpm: 10}
+  - {provider: gemini, model: "gemini-3.5-flash-lite", max_tokens: 4096, temperature: 0.0, rpm: 10}   # rejects thinking_budget; no thinking tokens observed by default
+  - {provider: gemini, model: "gemini-3.8-flash", max_tokens: 4096, temperature: 0.0, thinking_budget: 0, rpm: 10}
   # Ablation: let the model think (-1 = dynamic budget). Thinking tokens count against max_tokens.
-  # - {provider: gemini, model: "gemini-2.5-flash", max_tokens: 4096, temperature: 0.0, thinking_budget: -1, rpm: 10, label_suffix: "+thinking"}
+  # - {provider: gemini, model: "gemini-3.8-flash", max_tokens: 4096, temperature: 0.0, thinking_budget: -1, rpm: 10, label_suffix: "+thinking"}
 approaches: [direct, direct_cot, z3, z3_guided, z3_repair]
