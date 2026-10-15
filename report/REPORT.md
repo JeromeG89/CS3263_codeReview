@@ -2,8 +2,9 @@
 
 **CS3263 Project Report** — Jerome Goh (A0307923A, team lead), Mothiki Eswara Anirudh (A0308802J), Goh Joon Xiang (A0307578R)
 
-Companion documents: `report/IMPLEMENTATION.md` (full implementation write-up), `report/APPENDIX_A_DATASET.md`
-(every instance, precondition and reference Z3 encoding), `report/APPENDIX_B_PROMPTS.md` (every prompt, verbatim), `report/RUN_STATUS.md` (how far each evaluation run got and how to resume it).
+Companion documents: `report/IMPLEMENTATION.md` (full implementation write-up), `report/APPENDIX.md` (every instance,
+precondition and reference Z3 encoding, and every prompt verbatim), `report/RUN_STATUS.md` (how far each evaluation run got and how to resume it),
+`results/analysis/tables.md` (every generated result table).
 
 ---
 
@@ -56,7 +57,7 @@ We compare two ways of using an LLM:
 - **RQ1 (accuracy).** How accurate is direct LLM review compared with LLM-to-Z3 translation? How does accuracy vary with control-flow complexity (four tiers: straight-line code, branches, loops, inter-procedural code with nested loops) and with the bug class (bounds, division by zero, overflow, shift)?
 - **RQ2 (specification reliability).** How reliably can LLMs write Z3 specifications that are *executable* (the script runs and the solver returns an answer) and *faithful* (the answer matches the ground truth)? What goes wrong? We build a failure taxonomy that separates hallucinated APIs, sort/type misuse, syntax errors, solver time-outs, spurious counterexamples and missed bugs.
 - **RQ3 (closing the gap).** Does tool knowledge (guidance plus a worked example) close the gap? Does execution feedback (repair rounds driven by interpreter errors and by counterexamples that fail to reproduce on the real code) close it further?
-- **RQ4 (model scale).** How does model scale and quality change the picture? We evaluate two small open-weight models served locally (`qwen2.5-coder:7b`, `llama3.2:3b`). Commercial API models (Gemini 2.5 Flash / Flash-Lite) are planned as a follow-up.
+- **RQ4 (model scale).** How does model scale and quality change the picture? We evaluate two small open-weight models served locally (`qwen2.5-coder:7b`, `llama3.2:3b`). Two commercial API models (Gemini 3.5 Flash-Lite and Gemini 3.8 Flash) extend the comparison to much stronger models.
 
 ## 1.4 Contributions
 
@@ -289,7 +290,7 @@ Every label is checked by several independent oracles (`scripts/validate_dataset
 
 Fuzzing can only refute safety and CBMC is bounded, so a SAFE label rests on two complete arguments (the reference Z3 UNSAT and CBMC with passing unwinding assertions), backed by fuzzing. An UNSAFE label rests on an executed witness, a confirmed solver model and CBMC.
 
-On the frozen dataset all **120/120** instances pass every check (`dataset/VALIDATION.md`): every UNSAFE witness triggers a sanitizer report of its labelled class, every reference encoding returns the gold verdict (with confirmed counterexamples for UNSAFE), CBMC agrees with every label, and no fuzzing input triggers a violation in any SAFE instance.
+On the frozen dataset all **120/120** instances pass every check (per-instance results in `report/APPENDIX.md`, Appendix A): every UNSAFE witness triggers a sanitizer report of its labelled class, every reference encoding returns the gold verdict (with confirmed counterexamples for UNSAFE), CBMC agrees with every label, and no fuzzing input triggers a violation in any SAFE instance.
 
 ## 4.6 Excluded stress pair
 
@@ -401,7 +402,8 @@ The validated policies model a deployment in which a reviewer acts only on repro
 |---|---|---|---|
 | `qwen2.5-coder:7b` | Ollama (local) | evaluated | temperature 0, seed 0, `num_ctx` 8192, max 3,072 output tokens |
 | `llama3.2:3b` | Ollama (local) | evaluated | same |
-| Gemini 2.5 Flash, Gemini 2.5 Flash-Lite | Google API | planned | temperature 0, thinking disabled (`thinkingBudget: 0`), client-side rate limiting |
+| `gemini-3.5-flash-lite` | Google API | evaluated (see `RUN_STATUS.md`) | temperature 0, API-default thinking (the model rejects `thinkingBudget`; no thinking tokens were observed), max 4,096 output tokens, 10 requests/min |
+| `gemini-3.8-flash` | Google API | evaluated (see `RUN_STATUS.md`) | temperature 0, thinking disabled (`thinkingBudget: 0`), max 4,096 output tokens, 10 requests/min |
 
 We draw one sample per (model, approach, instance), giving 120 instances × 5 approaches per model. All responses are stored in a persistent SQLite cache keyed on the full request, which makes runs resumable and exactly reproducible from the cache. Failed requests are retried with exponential back-off and are never cached.
 

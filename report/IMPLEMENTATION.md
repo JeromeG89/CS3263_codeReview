@@ -12,9 +12,9 @@ This document explains everything we built and every decision behind it:
 
 It is meant to bring every team member fully up to date.
 
-Two generated appendices hold the full detail. They are produced from the code and data by `scripts/build_appendices.py`, so they always match what was run:
-- **[Appendix A — Dataset catalogue](APPENDIX_A_DATASET.md):** for all 120 instances, the exact code and preconditions the models saw, the machine-readable preconditions, the witness, the exact reference Z3 encoding, and the validation results. It also includes the C harnesses used for sanitizer execution and CBMC.
-- **[Appendix B — Prompts, verbatim](APPENDIX_B_PROMPTS.md):** every prompt template, fully rendered, plus every kind of repair message.
+The generated **[APPENDIX.md](APPENDIX.md)** holds the full detail. It is produced from the code and data by `scripts/build_appendices.py`, so it always matches what was run:
+- **Appendix A — Dataset catalogue:** for all 120 instances, the exact code and preconditions the models saw, the machine-readable preconditions, the witness, the exact reference Z3 encoding, and the validation results. It also includes the C harnesses used for sanitizer execution and CBMC.
+- **Appendix B — Prompts, verbatim:** every prompt template, fully rendered, plus every kind of repair message.
 
 ---
 
@@ -79,7 +79,7 @@ Two design ideas run through the whole project:
 | CBMC | 6.11.0 (Homebrew) | independent bounded model checker |
 | Ollama | 0.34.4 | serves the local models |
 | Local models | `qwen2.5-coder:7b` (4.7 GB), `llama3.2:3b` (2.0 GB) | models under evaluation |
-| Gemini | REST API `v1beta/models/{model}:generateContent`, configured for `gemini-2.5-flash-lite` and `gemini-2.5-flash` | models under evaluation (once a key is available) |
+| Gemini | REST API `v1beta/models/{model}:generateContent`, `gemini-3.5-flash-lite` and `gemini-3.8-flash` (the 2.5 models are listed but refused for new API users) | models under evaluation (once a key is available) |
 | Hardware | Apple M3 Pro laptop, 18 GB unified memory | all runs |
 
 ---
@@ -227,7 +227,7 @@ Both the reference Z3 encoding and CBMC time out on it, because it combines a sy
 
 ## 6. Ground truth: how every label is checked
 
-`scripts/validate_dataset.py` checks every instance four independent ways, and the dataset is accepted only if all agree (**120/120**, see `dataset/VALIDATION.md`):
+`scripts/validate_dataset.py` checks every instance four independent ways, and the dataset is accepted only if all agree (**120/120**; per-instance results in Appendix A of `APPENDIX.md`):
 
 1. **It compiles** under ASan + UBSan.
 2. **Witness (UNSAFE only).**
@@ -433,7 +433,7 @@ After each failed attempt, one message is appended (texts verbatim in Appendix B
 | Samples per instance | 1 | Compute budget. Variance between samples is listed as a threat to validity. |
 | Parallelism | one request at a time | We measured that running both models concurrently on the laptop GPU slows each by about 2×, so they run one after the other. |
 | Caching | SQLite cache keyed on (provider, model, settings, system prompt, full message history) | Runs resume after interruption, re-analysis needs no new calls, and identical requests are answered from the cache. This is why `z3_repair`'s first attempt is identical to `z3_guided`. |
-| Gemini (prepared) | `gemini-2.5-flash-lite`, `gemini-2.5-flash`; temperature 0; max 4,096 tokens; **thinking disabled** (`thinkingBudget: 0`); 10 requests/min client-side limit; retries on 429/5xx honouring Google's `retryDelay` | Disabling thinking keeps `direct` truly direct. Turning it on is a ready-made ablation (commented entry in `configs/gemini.yaml`). |
+| Gemini | `gemini-3.5-flash-lite` and `gemini-3.8-flash`; temperature 0; max 4,096 tokens; 10 requests/min client-side limit; retries on 429/5xx honouring Google's `retryDelay`; API-level failures are never recorded and the run stops after 5 in a row. **Thinking:** 3.8 Flash runs with `thinkingBudget: 0`; 3.5 Flash-Lite rejects that option and runs with the API default (no thinking tokens observed) | We first configured `gemini-2.5-flash(-lite)`, but Google refuses those for new users. Disabling thinking keeps `direct` truly direct; turning it on is a ready-made ablation (commented entry in `configs/gemini.yaml`). |
 
 ---
 
@@ -557,7 +557,7 @@ These are related to correctness.
 
 ## 16. Results
 
-The full results, with every table and figure, are in **`report/report.md` §6** (source tables: `results/analysis/tables.md`; figures: `report/figures/`), and in the team page. This section summarises them.
+The full results, with every table and figure, are in **`report/REPORT.md` §6** (source tables: `results/analysis/tables.md`; figures: `report/figures/`). This section summarises them.
 
 **Run coverage:**
 - qwen2.5-coder 7B: all 5 approaches × 120 instances.
@@ -596,7 +596,7 @@ The full results, with every table and figure, are in **`report/report.md` §6**
 
 ## 17. Discussion
 
-The full discussion is in **`report/report.md` §7**; Responsible AI is §8 and threats to validity §9. In short:
+The full discussion is in **`report/REPORT.md` §7**; Responsible AI is §8 and threats to validity §9. In short:
 
 - **The two paradigms fail differently.** Direct review always answers but does not reason. Translation reasons through the solver but often cannot produce a working script.
 - **The proposal's fallback scope (flat arithmetic) is exactly where translation works** for small models.
@@ -645,7 +645,7 @@ ollama pull qwen2.5-coder:7b && ollama pull llama3.2:3b
 .venv/bin/python scripts/run_eval.py --config configs/gemini.yaml  # needs GEMINI_API_KEY in .env
 .venv/bin/python scripts/rescore.py                                # re-score with the final parser/validator
 .venv/bin/python scripts/analyze.py                                # tables + figures
-.venv/bin/python scripts/build_appendices.py                       # Appendix A and B
+.venv/bin/python scripts/build_appendices.py                       # regenerates report/APPENDIX.md
 .venv/bin/python scripts/run_status.py                             # where each run stopped + resume commands
 ```
 
@@ -654,5 +654,5 @@ ollama pull qwen2.5-coder:7b && ollama pull llama3.2:3b
 | `results/runs/<run>/records.jsonl` | one JSON record per (model, approach, instance): verdict, witness and its status, every Z3 attempt with code and error, token counts, timings, and the **full transcript** |
 | `results/analysis/` | `tables.md` (all result tables), CSVs, `summary.json` |
 | `report/figures/` | figures |
-| `dataset/VALIDATION.md` | per-instance validation results |
+| `report/APPENDIX.md` | generated: every instance with validation results (A) and every prompt (B) |
 | `report/RUN_STATUS.md` | how far every evaluation run got, and the exact command to resume an interrupted run with your own API key (regenerate with `scripts/run_status.py`) |

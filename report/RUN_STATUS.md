@@ -1,6 +1,6 @@
 # Evaluation run status
 
-_Generated 2026-10-15 12:00 by `scripts/run_status.py`. Progress is read from `results/runs/<run>/records.jsonl`._
+_Generated 2026-10-15 12:05 by `scripts/run_status.py`. Progress is read from `results/runs/<run>/records.jsonl`._
 
 Every finished (model, approach, instance) is one line in the run's `records.jsonl`. `scripts/run_eval.py` skips those, so a stopped run continues exactly where it stopped. Answers that failed at the API level (quota, network) are never recorded, so they are simply retried.
 
@@ -30,11 +30,11 @@ Every finished (model, approach, instance) is one line in the run's `records.jso
 
 ## Run `gemini` (`configs/gemini.yaml`)
 
-**1158 instance-runs remaining.** Last stop: the run is in progress or was interrupted (no clean end in the log)
+**1110 instance-runs remaining.** Last stop: the run is in progress or was interrupted (no clean end in the log)
 
 | Model | Approach | Done | Status |
 |---|---|---|---|
-| `gemini:gemini-3.5-flash-lite` | `direct` | 38 / 120 | **incomplete** |
+| `gemini:gemini-3.5-flash-lite` | `direct` | 86 / 120 | **incomplete** |
 | `gemini:gemini-3.5-flash-lite` | `direct_cot` | 0 / 120 | **incomplete** |
 | `gemini:gemini-3.5-flash-lite` | `z3` | 0 / 120 | **incomplete** |
 | `gemini:gemini-3.5-flash-lite` | `z3_guided` | 0 / 120 | **incomplete** |

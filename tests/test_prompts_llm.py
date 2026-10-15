@@ -53,10 +53,11 @@ def test_gemini_config():
     assert cfg["run_name"] == "gemini" and cfg["workers"] == 2 and cfg["max_repairs"] == 3
     llms = [make_llm(spec) for spec in cfg["models"]]
     assert [type(m) for m in llms] == [Gemini, Gemini]
-    assert [m.name for m in llms] == ["gemini:gemini-2.5-flash-lite", "gemini:gemini-2.5-flash"]
+    assert [m.name for m in llms] == ["gemini:gemini-3.5-flash-lite", "gemini:gemini-3.8-flash"]
     for m in llms:
         assert (m.temperature, m.max_tokens) == (0.0, 4096)
-        assert m.opts == {"thinking_budget": 0, "rpm": 10}
+    # flash-lite rejects thinkingBudget, so only 3.8 Flash sets it
+    assert [m.opts for m in llms] == [{"rpm": 10}, {"thinking_budget": 0, "rpm": 10}]
 
 
 def test_cache_key_depends_on_options():

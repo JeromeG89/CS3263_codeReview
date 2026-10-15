@@ -2,7 +2,7 @@
 # Model ids: Google renames/retires models, so check the ids below against
 #   python scripts/list_gemini_models.py
 # before a run. Extra keys in a model entry are passed to the provider as **opts (see src/invcheck/llm.py):
-#   thinking_budget  0 disables "thinking" on 2.5 Flash models, so `direct` really answers directly
+#   thinking_budget  0 disables "thinking" where supported (3.8 Flash; 3.5 Flash-Lite rejects it), so `direct` really answers directly
 #   rpm              client-side rate limit in requests/minute, shared by all Gemini models in the process
 #   label_suffix     appended to the model name in records; REQUIRED for any ablation of an already-listed
 #                    model, otherwise its records collide with (and are skipped as) the base model's
