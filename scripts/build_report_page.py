@@ -30,6 +30,11 @@ def short(m):
 
 def main():
     data = json.loads((ROOT / "results" / "analysis" / "summary.json").read_text())
+    # show only complete (model, approach) runs; partial runs are listed as "in progress"
+    complete = {(s["model"], s["approach"]) for s in data["systems"] if s["n"] >= 120}
+    partial = {(s["model"], s["approach"]) for s in data["systems"] if s["n"] < 120}
+    for k in ("systems", "by_tier", "by_category", "by_twin", "z3_outcomes"):
+        data[k] = [r for r in data[k] if (r["model"], r["approach"]) in complete]
     sysd = {(s["model"], s["approach"]): s for s in data["systems"]}
     tier = {(r["model"], r["approach"], r["tier"]): r for r in data["by_tier"]}
     twin = {(r["model"], r["approach"], r["twin"]): r for r in data["by_twin"]}
@@ -56,7 +61,8 @@ def main():
         for a in APPROACH_ORDER:
             s = sysd.get((m, a))
             if not s:
-                rows.append(f"<tr><td>{short(m)}</td><td>{APPROACH_LABEL[a]}</td><td class='n' colspan='6'>not run</td></tr>")
+                status = "in progress" if (m, a) in partial else "not run"
+                rows.append(f"<tr><td>{short(m)}</td><td>{APPROACH_LABEL[a]}</td><td class='n' colspan='6'>{status}</td></tr>")
                 continue
             rows.append(f"<tr><td>{short(m)}</td><td>{APPROACH_LABEL[a]}</td><td class='n'>{pct(s['accuracy'])}</td>"
                         f"<td class='n'>{pct(s['acc_lo'], 0)}–{pct(s['acc_hi'], 0)}</td><td class='n'>{pct(s['tpr'], 0)}</td>"
