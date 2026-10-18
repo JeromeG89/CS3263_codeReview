@@ -23,7 +23,7 @@ from invcheck.llm import make_llm  # noqa: E402
 
 RUNS = ROOT / "results" / "runs"
 LOGS = ROOT / "results" / "logs"
-CONFIGS = {"local": "configs/local.yaml", "local_llama": "configs/local_llama.yaml", "gemini": "configs/gemini.yaml"}
+CONFIGS = {"local": "configs/local.yaml", "local_llama": "configs/local_llama.yaml", "gemini": "configs/gemini.yaml", "groq": "configs/groq.yaml"}
 # models whose records live in a different run than their config suggests
 ONLY_MODELS = {"local": ["ollama:qwen2.5-coder:7b"]}
 NOT_PLANNED = {("ollama:llama3.2:3b", "z3_repair"): "skipped by decision (see report §6.6)"}
@@ -94,7 +94,10 @@ def main():
         lines += ["", "| Model | Approach | Done | Status |", "|---|---|---|---|", *rows, ""]
         if total:
             lines += ["To resume (from the repo root, on an up-to-date clone of `main`):", "", "```bash"]
-            if run == "gemini":
+            if run == "groq":
+                lines += ["cp .env.example .env            # then put your own GROQ_API_KEY in .env (free: console.groq.com/keys)",
+                          ".venv/bin/python scripts/list_llm_limits.py --provider groq   # your per-model daily limits"]
+            elif run == "gemini":
                 lines += ["cp .env.example .env            # then put your own GEMINI_API_KEY in .env",
                           ".venv/bin/python scripts/list_gemini_models.py --filter flash   # check the model ids still work"]
             else:

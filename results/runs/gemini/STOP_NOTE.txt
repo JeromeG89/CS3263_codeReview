@@ -10,3 +10,8 @@ To continue gemini-3.8-flash you need an API key whose Google project has a high
 (for example one with billing enabled). With the key in .env, run the resume command below; it skips
 everything already recorded. If you only have a free key, run the same command once a day: it stops
 cleanly after 5 consecutive failures, and nothing failed is ever recorded.
+
+Other strong Gemini models were probed on 2026-10-18 with the same free key: gemini-3.5-flash, gemini-3.6-flash,
+gemini-3.7-flash and gemini-3-flash-preview are all capped at 20 requests/day (plus 5 requests/minute);
+gemini-3.1-pro-preview and gemini-pro-latest have a free quota of 0; gemini-2.5-pro/flash are refused for new users.
+Only the Flash-Lite models have a usable free quota. For a stronger free model, see configs/groq.yaml (Meta Llama on Groq).

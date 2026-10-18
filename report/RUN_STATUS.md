@@ -1,6 +1,6 @@
 # Evaluation run status
 
-_Generated 2026-10-18 12:54 by `scripts/run_status.py`. Progress is read from `results/runs/<run>/records.jsonl`._
+_Generated 2026-10-18 13:15 by `scripts/run_status.py`. Progress is read from `results/runs/<run>/records.jsonl`._
 
 Every finished (model, approach, instance) is one line in the run's `records.jsonl`. `scripts/run_eval.py` skips those, so a stopped run continues exactly where it stopped. Answers that failed at the API level (quota, network) are never recorded, so they are simply retried.
 
@@ -46,6 +46,11 @@ Every finished (model, approach, instance) is one line in the run's `records.jso
 > (for example one with billing enabled). With the key in .env, run the resume command below; it skips
 > everything already recorded. If you only have a free key, run the same command once a day: it stops
 > cleanly after 5 consecutive failures, and nothing failed is ever recorded.
+> 
+> Other strong Gemini models were probed on 2026-10-18 with the same free key: gemini-3.5-flash, gemini-3.6-flash,
+> gemini-3.7-flash and gemini-3-flash-preview are all capped at 20 requests/day (plus 5 requests/minute);
+> gemini-3.1-pro-preview and gemini-pro-latest have a free quota of 0; gemini-2.5-pro/flash are refused for new users.
+> Only the Flash-Lite models have a usable free quota. For a stronger free model, see configs/groq.yaml (Meta Llama on Groq).
 
 | Model | Approach | Done | Status |
 |---|---|---|---|
@@ -73,3 +78,32 @@ cp .env.example .env            # then put your own GEMINI_API_KEY in .env
 Then commit `results/runs/gemini/records.jsonl` so the next person continues from there.
 
 Notes: the free tier allows roughly 10 requests/minute per project (the client throttles to that), and the daily quota resets at midnight Pacific time. A different API key gives the same models and settings, so results from several keys can be combined. The local response cache (`results/cache/`) is not committed, so a resumed `z3_repair` re-queries its first attempt instead of reusing the `z3_guided` answer; at temperature 0 this is usually but not always identical.
+
+## Run `groq` (`configs/groq.yaml`)
+
+**1200 instance-runs remaining.**
+
+| Model | Approach | Done | Status |
+|---|---|---|---|
+| `groq:llama-3.3-70b-versatile` | `direct` | 0 / 120 | **incomplete** |
+| `groq:llama-3.3-70b-versatile` | `direct_cot` | 0 / 120 | **incomplete** |
+| `groq:llama-3.3-70b-versatile` | `z3` | 0 / 120 | **incomplete** |
+| `groq:llama-3.3-70b-versatile` | `z3_guided` | 0 / 120 | **incomplete** |
+| `groq:llama-3.3-70b-versatile` | `z3_repair` | 0 / 120 | **incomplete** |
+| `groq:meta-llama/llama-4-scout-17b-16e-instruct` | `direct` | 0 / 120 | **incomplete** |
+| `groq:meta-llama/llama-4-scout-17b-16e-instruct` | `direct_cot` | 0 / 120 | **incomplete** |
+| `groq:meta-llama/llama-4-scout-17b-16e-instruct` | `z3` | 0 / 120 | **incomplete** |
+| `groq:meta-llama/llama-4-scout-17b-16e-instruct` | `z3_guided` | 0 / 120 | **incomplete** |
+| `groq:meta-llama/llama-4-scout-17b-16e-instruct` | `z3_repair` | 0 / 120 | **incomplete** |
+
+To resume (from the repo root, on an up-to-date clone of `main`):
+
+```bash
+cp .env.example .env            # then put your own GROQ_API_KEY in .env (free: console.groq.com/keys)
+.venv/bin/python scripts/list_llm_limits.py --provider groq   # your per-model daily limits
+.venv/bin/python scripts/run_eval.py --config configs/groq.yaml
+.venv/bin/python scripts/rescore.py && .venv/bin/python scripts/analyze.py
+.venv/bin/python scripts/run_status.py   # refresh this file
+```
+
+Then commit `results/runs/groq/records.jsonl` so the next person continues from there.
