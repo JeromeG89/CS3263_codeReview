@@ -69,3 +69,19 @@ def test_cache_key_depends_on_options():
     assert a._key("sys", msgs) == c._key("sys", msgs)  # the label does not change the request
     assert c.name == "gemini:g+x"
     assert isinstance(make_llm({"provider": "ollama", "model": "m"}), Ollama)
+
+
+def test_parse_wait_formats():
+    from invcheck.llm import _parse_wait
+    assert _parse_wait("Please try again in 7m12.5s.") == 432.5
+    assert _parse_wait("850ms") == 0.85
+    assert _parse_wait("30") == 30.0
+    assert _parse_wait("no hint here") is None
+
+
+def test_groq_config_builds_without_network():
+    from invcheck.llm import Groq
+    cfg = yaml.safe_load((ROOT / "configs" / "groq.yaml").read_text())
+    llms = [make_llm(spec) for spec in cfg["models"]]
+    assert all(isinstance(m, Groq) for m in llms)
+    assert all(m.temperature == 0.0 for m in llms)
