@@ -1,4 +1,5 @@
-gemini-3.8-flash was NOT run beyond 4 test answers: stopped 2026-10-15 16:50 (UTC+8).
+gemini-3.8-flash has only 17 answers (15 direct and 2 bare Z3, the first instances in order): stopped again on 2026-10-18
+(UTC+8) when the daily cap was hit. Earlier stop: 2026-10-15 16:50.
 
 Reason: Google's free tier allows only 20 requests per day per project for gemini-3.8-flash
 ("generate_content_free_tier_requests, limit: 20", HTTP 429, "retry in 15h"). The evaluation needs

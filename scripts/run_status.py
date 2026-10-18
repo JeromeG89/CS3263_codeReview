@@ -93,7 +93,7 @@ def main():
             lines += ["", "**Why it stopped** (from `" + str(note_path.relative_to(ROOT)) + "`):", ""] + ["> " + ln for ln in note.splitlines()]
         lines += ["", "| Model | Approach | Done | Status |", "|---|---|---|---|", *rows, ""]
         if total:
-            lines += ["To resume (from the repo root, on a fresh clone of branch `project-pipeline`):", "", "```bash"]
+            lines += ["To resume (from the repo root, on an up-to-date clone of `main`):", "", "```bash"]
             if run == "gemini":
                 lines += ["cp .env.example .env            # then put your own GEMINI_API_KEY in .env",
                           ".venv/bin/python scripts/list_gemini_models.py --filter flash   # check the model ids still work"]

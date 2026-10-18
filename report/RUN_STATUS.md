@@ -1,6 +1,6 @@
 # Evaluation run status
 
-_Generated 2026-10-15 16:55 by `scripts/run_status.py`. Progress is read from `results/runs/<run>/records.jsonl`._
+_Generated 2026-10-18 12:54 by `scripts/run_status.py`. Progress is read from `results/runs/<run>/records.jsonl`._
 
 Every finished (model, approach, instance) is one line in the run's `records.jsonl`. `scripts/run_eval.py` skips those, so a stopped run continues exactly where it stopped. Answers that failed at the API level (quota, network) are never recorded, so they are simply retried.
 
@@ -30,11 +30,12 @@ Every finished (model, approach, instance) is one line in the run's `records.jso
 
 ## Run `gemini` (`configs/gemini.yaml`)
 
-**596 instance-runs remaining.**
+**583 instance-runs remaining.**
 
 **Why it stopped** (from `results/runs/gemini/STOP_NOTE.txt`):
 
-> gemini-3.8-flash was NOT run beyond 4 test answers: stopped 2026-10-15 16:50 (UTC+8).
+> gemini-3.8-flash has only 17 answers (15 direct and 2 bare Z3, the first instances in order): stopped again on 2026-10-18
+> (UTC+8) when the daily cap was hit. Earlier stop: 2026-10-15 16:50.
 > 
 > Reason: Google's free tier allows only 20 requests per day per project for gemini-3.8-flash
 > ("generate_content_free_tier_requests, limit: 20", HTTP 429, "retry in 15h"). The evaluation needs
@@ -53,13 +54,13 @@ Every finished (model, approach, instance) is one line in the run's `records.jso
 | `gemini:gemini-3.5-flash-lite` | `z3` | 120 / 120 | complete |
 | `gemini:gemini-3.5-flash-lite` | `z3_guided` | 120 / 120 | complete |
 | `gemini:gemini-3.5-flash-lite` | `z3_repair` | 120 / 120 | complete |
-| `gemini:gemini-3.8-flash` | `direct` | 2 / 120 | **incomplete** |
+| `gemini:gemini-3.8-flash` | `direct` | 15 / 120 | **incomplete** |
 | `gemini:gemini-3.8-flash` | `direct_cot` | 0 / 120 | **incomplete** |
 | `gemini:gemini-3.8-flash` | `z3` | 2 / 120 | **incomplete** |
 | `gemini:gemini-3.8-flash` | `z3_guided` | 0 / 120 | **incomplete** |
 | `gemini:gemini-3.8-flash` | `z3_repair` | 0 / 120 | **incomplete** |
 
-To resume (from the repo root, on a fresh clone of branch `project-pipeline`):
+To resume (from the repo root, on an up-to-date clone of `main`):
 
 ```bash
 cp .env.example .env            # then put your own GEMINI_API_KEY in .env
