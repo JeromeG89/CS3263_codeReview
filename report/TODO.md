@@ -12,7 +12,7 @@ Deadlines: presentation week of 9 Nov 2026 (15 min + 5 min Q&A, possibly recorde
 
 ## Report
 
-- [ ] **Cut to 10 pages** (11pt, single column, 1-in margins, excluding title page and references). Body is ~5,600 words, likely over. Candidate cuts: Z3-outcomes figure (§6.3), semantic-traps table (§3), qwen tier table (§6.2), tighten §2 and §8.
+- [x] Cut to ~4,900 words body (incl. tables), 1 figure. **Verify ≤ 10 pages once rendered**; if still over, next cuts: §6.1 sentence, §3 semantic-traps paragraph, §9 bullets.
 - [ ] **Render to PDF** and check page count: `brew install pandoc basictex`, then from `report/`: `pandoc SUBMIT_REPORT.md -o report.pdf -V geometry:margin=1in -V fontsize=11pt` (or paste into Google Docs / Word).
 - [ ] Check figures in `report/figures/` (regenerated with 3.8 Flash) look right in the PDF.
 - [ ] Decide whether long-form `REPORT.md` is shared at all. If yes, update it: it still says 3.8 Flash was not evaluated (§1.3, §5.6, §6 notice, §6.9, §7.6, §9.3, §10).
@@ -20,7 +20,8 @@ Deadlines: presentation week of 9 Nov 2026 (15 min + 5 min Q&A, possibly recorde
 
 ## Presentation
 
-- [ ] Make slides (15 min). Suggested arc: problem and formulation (CSP/SMT, entailment by refutation) → benchmark and validation → approaches → results (small models fail, strong models tie, CBMC wins) → evidence asymmetry and responsible AI → limitations.
+- [x] Slide deck drafted: `report/SLIDES.md` (Marp, 18 slides, speaker split and Q&A notes in comments). Render with `npx @marp-team/marp-cli report/SLIDES.md --pdf` (or the Marp VS Code extension).
+- [ ] Adjust the speaker split in the first slide's notes to match who presents what.
 - [ ] Rehearse timing and Q&A; check whether the presentation must be recorded and uploaded.
 
 ## Known caveats to be ready to explain in Q&A
