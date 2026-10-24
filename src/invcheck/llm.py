@@ -156,7 +156,7 @@ class Ollama(LLM):
 class Gemini(LLM):
     """Google Gemini via the public REST API (generativelanguage.googleapis.com).
 
-    opts: thinking_budget (int; 0 disables thinking where the model supports it, e.g. gemini-3.8-flash), rpm (client-side rate limit)."""
+    opts: thinking_budget (int; 0 reduces but does not fully disable thinking on gemini-3.8-flash), rpm (client-side rate limit)."""
 
     provider = "gemini"
     _lock = threading.Lock()
