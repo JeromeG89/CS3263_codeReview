@@ -4,10 +4,10 @@ Deadlines: presentation week of 9 Nov 2026 (15 min + 5 min Q&A, possibly recorde
 
 ## Needs team input
 
-- [ ] **Emails** for all three members in the header table of `SUBMIT_REPORT.md`.
-- [ ] **Division of Labour** table in `SUBMIT_REPORT.md`: one or two true lines per member. Marks are deducted if this is missing or vague.
+- [x] **Emails** for all three members (from the proposal).
+- [ ] **Division of Labour** table: filled from the proposal's *planned* split. Each member checks their row matches what they actually did and edits it if not (guidelines allow the actual split to differ from the proposal). Marks are deducted if this is missing or vague.
 - [ ] **Use of AI Assistance** section in `SUBMIT_REPORT.md`: list honestly which parts Claude produced (benchmark instances, harness code, analysis scripts, report text, ...) and which were the team's own.
-- [ ] Confirm the **project proposal** was submitted (required to receive a project grade).
+- [x] Project proposal written (`CS3263 Project Proposal (2).pdf`). Confirm it was actually submitted on Canvas.
 - [ ] Every member reads the whole report and can explain any part of it (guideline: all members must understand the entire work).
 
 ## Report

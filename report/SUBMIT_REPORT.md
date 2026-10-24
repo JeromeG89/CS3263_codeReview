@@ -4,9 +4,9 @@
 
 | Name | Matric no. | Email |
 |---|---|---|
-| Jerome Goh (team leader) | A0307923A | TODO@u.nus.edu |
-| Mothiki Eswara Anirudh | A0308802J | TODO@u.nus.edu |
-| Goh Joon Xiang | A0307578R | TODO@u.nus.edu |
+| Jerome Goh (team leader) | A0307923A | e1398363@u.nus.edu |
+| Mothiki Eswara Anirudh | A0308802J | e1399242@u.nus.edu |
+| Goh Joon Xiang | A0307578R | e1398018@u.nus.edu |
 
 Code, data, raw model outputs and full-length companion documents (`REPORT.md`, `IMPLEMENTATION.md`, `APPENDIX.md`) are in the project repository.
 
@@ -251,9 +251,9 @@ Whether an LLM reviews C safety better directly or by translating to Z3 depends 
 
 | Member | Contributions |
 |---|---|
-| Jerome Goh (leader) | TODO: e.g. coordination, harness and sandbox, Z3 approaches, analysis |
-| Mothiki Eswara Anirudh | TODO |
-| Goh Joon Xiang | TODO |
+| Jerome Goh (leader) | Team coordination; evaluation design (approaches, metrics, statistical tests); the Z3 solver pipeline (sandboxed script execution, counterexample replay, repair loop); analysis of the solver's limitations |
+| Mothiki Eswara Anirudh | Constructing the problem instances (tiers, minimal pairs); defining the safety invariants; ground-truth validation; the direct LLM baseline evaluations |
+| Goh Joon Xiang | Frontier model API integration (Gemini client, rate limiting, quota handling); the Z3 translation prompts and guidance; the Responsible AI analysis |
 
 All members reviewed the benchmark, results and report, and understand the full pipeline.
 
