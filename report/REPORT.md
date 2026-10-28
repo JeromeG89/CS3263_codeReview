@@ -9,6 +9,8 @@ precondition and reference Z3 encoding, and every prompt verbatim), `report/RUN_
 ---
 
 
+**Results source:** completed four-model records at `ecc7f3a`; §§6.8.1–2 analyse saved responses without rerunning experiments. Reproduction: README.
+
 # Abstract
 
 Large language models are increasingly used as automated code reviewers, but they cannot prove the absence of the mathematical edge cases that make C code unsafe: out-of-bounds access, division by zero, signed overflow and invalid shifts. We compare two ways of using an LLM for this task:
@@ -33,12 +35,12 @@ Large language models are increasingly used as automated code reviewers, but the
 | LLM→Z3 guided + repair | **97.5%** |
 
 - Guidance and repair work for this model. Repair never repeated a script, 98% of its final scripts executed, and every reported bug was confirmed on the real code (precision 100%).
-- Chain of thought and Z3 + repair are statistically indistinguishable (p = 1.0). The hybrid of the two reaches 99.2%.
-- What the Z3 pipeline adds over a strong chain of thought is not accuracy but an inspectable artefact: a specification that a reviewer, a solver or another tool can check.
+- No significant accuracy difference was detected between chain of thought and Z3 + repair (p = 1.0). The hybrid of the two reaches 99.2%.
+- Gemini 3.8 scores 120/120 with direct, CoT and repair; CoT confirms 59 bugs versus repair's 60. Z3 adds inspectable specifications; UNSAT requires faithful translation.
 
 **Classical tools still win on this benchmark.** CBMC and the gold encodings decide all 120 instances in under 2 s each.
 
-**Scope.** The second strong model (Gemini 3.8 Flash) could not be run: Google's free tier allows 20 requests a day for it. `report/RUN_STATUS.md` explains how to continue it.
+**Repair cost.** Immediate CoT fallback reaches 120/120 and 60 confirmed bugs for both Gemini models in 141/125 calls; these post-hoc budgets need held-out validation.
 
 **Implication.** An UNSAT answer from an LLM-written specification is only as trustworthy as the translation behind it. Bug reports from such pipelines can be checked automatically, but their "safe" verdicts cannot.
 
@@ -78,7 +80,7 @@ We compare two ways of using an LLM:
 1. **A benchmark of 120 C verification instances arranged as 60 minimal pairs.** Each UNSAFE function has a SAFE twin. The twin differs either by a one- or two-line code fix or *only* by a tightened precondition, so a model cannot succeed by pattern matching on the code alone. Instances span four control-flow tiers and four bug classes, and include deliberate semantic traps (C `%` on negative operands, `INT_MIN / -1`, unsigned wrap-around) and decoys (provably dead code).
 2. **Validated ground truth.** We validate every label with independent oracles. For UNSAFE instances we execute a witness under AddressSanitizer and UndefinedBehaviorSanitizer. Every instance has a reference Z3 encoding whose counterexamples we re-execute. We also run the CBMC bounded model checker [Clarke et al. 2004] and precondition-respecting fuzzing on SAFE instances.
 3. **An evaluation harness for LLM-generated specifications.** It runs untrusted LLM-written Z3 scripts in a sandbox. It replays every solver counterexample on the real C code, so a "bug found" verdict is either *confirmed* or flagged as spurious. Execution errors and non-reproducing counterexamples are fed back to the model for repair. None of this needs the ground-truth label.
-4. **A controlled comparison.** We compare five LLM approaches (direct, direct + CoT, Z3, Z3 guided, Z3 guided + repair), three post-hoc combined policies and four non-LLM reference points (gold Z3 encodings, CBMC, dictionary fuzzing, random fuzzing). We report paired significance tests and a failure taxonomy of the generated specifications.
+4. **A controlled comparison.** We compare five LLM approaches (direct, direct + CoT, Z3, Z3 guided, Z3 guided + repair), original and replay-required post-hoc policies and four non-LLM reference points (gold Z3 encodings, CBMC, dictionary fuzzing, random fuzzing). We report paired significance tests and a failure taxonomy of the generated specifications.
 5. **A Responsible-AI analysis of automated review.** We focus on the asymmetry between a checkable counterexample and an UNSAT "proof" that is only as good as the translation behind it, and derive recommendations for keeping humans in the loop.
 
 The rest of the report is organised as follows. Section 2 reviews background and related work. Section 3 formalises the problem. Section 4 describes the dataset and Section 5 the approaches and evaluation protocol. Sections 6–7 present and discuss results. Section 8 discusses responsible-AI considerations and Section 9 threats to validity.
@@ -408,7 +410,9 @@ Three post-hoc systems are computed from existing records without additional mod
 - **CoT, witness-validated:** report UNSAFE only if the CoT witness is confirmed by execution; otherwise SAFE.
 - **Z3 + repair, witness-validated:** the same rule applied to `z3_repair`.
 
-The validated policies model a deployment in which a reviewer acts only on reproducible bug reports. They trade recall for precision by construction.
+The validated policies model a binary bug-reporting decision: report a reproducible bug or report none. Their SAFE output does not establish safety. They trade recall for precision by construction.
+
+**Replay-required policies.** Unconfirmed UNSAFE becomes UNKNOWN; SAFE is retained. The hybrid uses CoT after final Z3 UNKNOWN or unconfirmed UNSAFE, requiring confirmation for CoT bug claims too. Selection is label-free; answer and evidence follow the selected source. Costs include Z3 repairs plus CoT only on fallback; cached timings cannot establish runtime (§6.8.1).
 
 ## 5.6 Models and decoding
 
@@ -417,9 +421,9 @@ The validated policies model a deployment in which a reviewer acts only on repro
 | `qwen2.5-coder:7b` | Ollama (local) | evaluated | temperature 0, seed 0, `num_ctx` 8192, max 3,072 output tokens |
 | `llama3.2:3b` | Ollama (local) | evaluated | same |
 | `gemini-3.5-flash-lite` | Google API | evaluated (see `RUN_STATUS.md`) | temperature 0, API-default thinking (the model rejects `thinkingBudget`; no thinking tokens were observed), max 4,096 output tokens, 10 requests/min |
-| `gemini-3.8-flash` | Google API | evaluated (see `RUN_STATUS.md`) | temperature 0, thinking disabled (`thinkingBudget: 0`), max 4,096 output tokens, 10 requests/min |
+| `gemini-3.8-flash` | Google API | evaluated (see `RUN_STATUS.md`) | temperature 0, `thinkingBudget: 0` (hidden thinking still observed), max 4,096 output tokens; current config limit 60 requests/min |
 
-We draw one sample per (model, approach, instance), giving 120 instances × 5 approaches per model. All responses are stored in a persistent SQLite cache keyed on the full request, which makes runs resumable and exactly reproducible from the cache. Failed requests are retried with exponential back-off and are never cached.
+We draw one sample per (model, approach, instance), giving 120 instances per evaluated approach (five approaches for qwen and both Gemini models, four for llama; repair was skipped for llama). All responses are stored in a persistent SQLite cache keyed on the full request, which makes runs resumable and exactly reproducible from the cache. Failed requests are retried with exponential back-off and are never cached.
 
 ## 5.7 Metrics
 
@@ -447,31 +451,11 @@ For the Z3 approaches we additionally classify each final attempt into an **outc
 - missed bug (UNSAT on an UNSAFE instance);
 - errors: hallucinated API (`NameError`), type/operator misuse (`TypeError`), Z3 sort/API misuse (`Z3Exception`), syntax, protocol violation (no solver), no code, time-out, solver unknown, other runtime.
 
-We also record static features of the generated scripts: bit-vector versus `Int` sorts, use of `SRem` and of the overflow predicates, arrays, `push`/`pop`, explicit `check()` calls, and Python Boolean operators on comparisons. We relate them to correctness 
-
-| model            | approach   |   n |   acc |   bitvec |   int_sort |   srem |   ovf_helpers |   push_pop |   lines |
-|:-----------------|:-----------|----:|------:|---------:|-----------:|-------:|--------------:|-----------:|--------:|
-| llama3.2:3b      | z3         | 120 |  0.00 |     0.69 |       1.00 |   0.00 |          0.00 |       0.01 |  122.00 |
-| llama3.2:3b      | z3_guided  | 120 |  0.02 |     0.69 |       0.48 |   0.00 |          0.73 |       0.00 |  113.00 |
-| qwen2.5-coder:7b | z3         | 120 |  0.40 |     0.07 |       0.95 |   0.00 |          0.00 |       0.00 |   31.00 |
-| qwen2.5-coder:7b | z3_guided  | 120 |  0.23 |     1.00 |       0.00 |   0.00 |          0.62 |       0.00 |   25.00 |
-| qwen2.5-coder:7b | z3_repair  | 120 |  0.28 |     1.00 |       0.00 |   0.00 |          0.62 |       0.00 |   25.00 |
-
-### Accuracy conditioned on code features (all models, all Z3 approaches)
-
-| feature               | present   |   n |   accuracy |
-|:----------------------|:----------|----:|-----------:|
-| uses_bitvec           | True      | 415 |       0.16 |
-| uses_bitvec           | False     | 185 |       0.24 |
-| uses_int_sort         | True      | 292 |       0.15 |
-| uses_int_sort         | False     | 308 |       0.21 |
-| uses_overflow_helpers | True      | 236 |       0.12 |
-| uses_overflow_helpers | False     | 364 |       0.23 |
-| uses_srem             | False     | 600 |       0.18 |
-
-.
-
-Results are broken down by tier  (Section 6), bug class  (Section 6) and twin type  (Section 6). The overall picture appears in  (Section 6) and  (Section 6).
+We also record static features of generated scripts: bit-vector versus `Int` sorts,
+`SRem`, overflow predicates, arrays, explicit solver checks, `push`/`pop` and Python
+Boolean operators. The current four-model feature tables and breakdowns by tier,
+bug class and twin type are generated in [`tables.md`](../results/analysis/tables.md).
+Feature correlations are descriptive; they do not establish that using an API caused correctness.
 
 ## 5.8 Statistical testing
 
@@ -484,25 +468,7 @@ All systems are evaluated on the same instances, so comparisons are paired. For 
 - guided vs guided + repair
 - Direct vs guided + repair
 
-The **Holm–Bonferroni** correction is applied across the whole family (all comparisons × all models) 
-
-| model            | A          | B                  |   n |   acc_A |   acc_B |   A_only_correct |   B_only_correct |     p |   p_holm |
-|:-----------------|:-----------|:-------------------|----:|--------:|--------:|-----------------:|-----------------:|------:|---------:|
-| llama3.2:3b      | direct     | direct_cot         | 120 |   0.542 |   0.467 |               27 |               18 | 0.233 |    1.000 |
-| llama3.2:3b      | direct     | z3                 | 120 |   0.542 |   0.000 |               65 |                0 | 0.000 |    0.000 |
-| llama3.2:3b      | z3         | z3_guided          | 120 |   0.000 |   0.017 |                0 |                2 | 0.500 |    1.000 |
-| llama3.2:3b      | direct     | hybrid_z3_else_cot | 120 |   0.542 |   0.467 |               27 |               18 | 0.233 |    1.000 |
-| llama3.2:3b      | direct_cot | hybrid_z3_else_cot | 120 |   0.467 |   0.467 |                0 |                0 | 1.000 |    1.000 |
-| qwen2.5-coder:7b | direct     | direct_cot         | 120 |   0.558 |   0.567 |               14 |               15 | 1.000 |    1.000 |
-| qwen2.5-coder:7b | direct     | z3                 | 120 |   0.558 |   0.400 |               40 |               21 | 0.020 |    0.184 |
-| qwen2.5-coder:7b | direct_cot | z3_repair          | 120 |   0.567 |   0.275 |               49 |               14 | 0.000 |    0.000 |
-| qwen2.5-coder:7b | z3         | z3_guided          | 120 |   0.400 |   0.233 |               28 |                8 | 0.001 |    0.012 |
-| qwen2.5-coder:7b | z3_guided  | z3_repair          | 120 |   0.233 |   0.275 |                0 |                5 | 0.062 |    0.500 |
-| qwen2.5-coder:7b | direct     | z3_repair          | 120 |   0.558 |   0.275 |               50 |               16 | 0.000 |    0.000 |
-| qwen2.5-coder:7b | direct     | hybrid_z3_else_cot | 120 |   0.558 |   0.633 |               17 |               26 | 0.222 |    1.000 |
-| qwen2.5-coder:7b | direct_cot | hybrid_z3_else_cot | 120 |   0.567 |   0.633 |               16 |               24 | 0.268 |    1.000 |
-
-. Cross-model comparisons for a fixed approach use the same test and are reported without correction as exploratory. With $n = 120$, Wilson intervals are roughly ±9 percentage points at 50% accuracy, so we interpret only large or consistent differences.
+The **Holm–Bonferroni** correction covers the original comparisons across four models, including Direct/CoT versus the bare-Z3 hybrid ([exact results](../results/analysis/mcnemar.csv)). Cross-model tests are exploratory and uncorrected. A separate 30-test sensitivity family resamples and swaps complete safe/unsafe pairs (20,000 draws; seed 3263), measuring accuracy and confirmed-bug recall. It preserves the original tests. Non-significance does not establish equivalence; constructed pairs may share templates.
 
 ## 5.9 Sandboxing LLM-generated code
 
@@ -523,15 +489,16 @@ Python 3.11; Z3 via the `z3-solver` Python package; Apple clang 17 with AddressS
 
 # 6. Results
 
-> **Run coverage notice.** Three models are fully evaluated: `qwen2.5-coder:7b`, `llama3.2:3b` (four of five approaches) and `gemini-3.5-flash-lite`. **`gemini-3.8-flash` is not evaluated** beyond four test answers, because Google's free tier allows only 20 requests per day for it. `report/RUN_STATUS.md` has the details and the command to continue it with another API key; when that run completes, add its rows to §6.2 and §6.9 and delete this notice.
+All numbers are over the 120 benchmark instances (60 UNSAFE, 60 SAFE) unless
+stated otherwise. Brackets give 95% Wilson intervals. The complete saved-record
+snapshot contains all five approaches for qwen, Gemini 3.5 and Gemini 3.8, and four
+for llama; llama's repair run was skipped (§6.6). Missing runs are not scored as zero.
+The full generated tables are in [`tables.md`](../results/analysis/tables.md).
 
-All numbers are over the 120 benchmark instances (60 UNSAFE, 60 SAFE) unless stated otherwise. Brackets give 95% Wilson intervals. Every LLM record was re-scored with the final parser and validator (`scripts/rescore.py`); for qwen this changed no verdict and no witness status. The full generated tables are in `results/analysis/tables.md`.
-
-**Coverage of the runs.**
-- `qwen2.5-coder:7b`: all five approaches on all 120 instances.
-- `llama3.2:3b`: `direct`, `direct_cot`, `z3` and `z3_guided`. Its `z3_repair` run was not performed (§6.6).
-- `gemini-3.5-flash-lite`: all five approaches on all 120 instances. Its results are in §6.9; the tables in §6.2 to §6.8 describe the two small local models unless stated.
-- `gemini-3.8-flash`: not evaluated (see the notice above).
+Section 6.2 presents all four models. Sections 6.3–6.6 retain the detailed small-model
+diagnosis, section 6.9 covers both Gemini models, and sections 6.8.1–2 compare saved
+answers under combined policies and different repair budgets. Original verdict
+accuracy and working bug inputs are reported separately.
 
 ## 6.1 Reference points: the problem is solvable
 
@@ -558,21 +525,31 @@ _(The non-LLM reference points are the right-hand panel of the accuracy figure i
 
 ![recall vs specificity](figures/fig2_tpr_tnr.png)
 
-| Model | Approach | Accuracy | Recall (UNSAFE) | Specificity (SAFE) | No answer | Pair acc. | Same verdict on both twins |
+| Model | Approach | Accuracy [95% CI] | Recall (UNSAFE) | Specificity (SAFE) | No answer | Pair acc. | Same verdict on both twins |
 |---|---|---|---|---|---|---|---|
-| qwen 7B | Direct | 55.8% [46.9, 64.4] | 25.0% | 86.7% | 0 | 13.3% | 85.0% |
-| qwen 7B | Direct + CoT | 56.7% [47.7, 65.2] | 20.0% | 93.3% | 0 | 16.7% | 80.0% |
-| qwen 7B | LLM→Z3 | 40.0% [31.7, 48.9] | 45.0% | 35.0% | 48 | 21.7% | 56.7% |
-| qwen 7B | LLM→Z3 guided | 23.3% [16.7, 31.7] | 28.3% | 18.3% | 72 | 10.0% | 61.7% |
-| qwen 7B | LLM→Z3 guided + repair | 27.5% [20.3, 36.1] | 33.3% | 21.7% | 61 | 13.3% | 58.3% |
-| llama 3B | Direct | 54.2% [45.3, 62.8] | 10.0% | 98.3% | 0 | 8.3% | 91.7% |
-| llama 3B | Direct + CoT | 46.7% [38.0, 55.6] | 33.3% | 60.0% | 0 | 18.3% | 56.7% |
-| llama 3B | LLM→Z3 | 0.0% [0.0, 3.1] | 0% | 0% | 120 | 0% | – |
-| llama 3B | LLM→Z3 guided | 1.7% [0.5, 5.9] | 3.3% | 0% | 117 | 0% | 98.3% |
+| qwen 7B | Direct | 55.8% [46.9%, 64.4%] | 25.0% | 86.7% | 0 | 13.3% | 85.0% |
+| qwen 7B | Direct + CoT | 56.7% [47.7%, 65.2%] | 20.0% | 93.3% | 0 | 16.7% | 80.0% |
+| qwen 7B | LLM→Z3 | 40.0% [31.7%, 48.9%] | 45.0% | 35.0% | 48 | 21.7% | 56.7% |
+| qwen 7B | LLM→Z3 guided | 23.3% [16.7%, 31.7%] | 28.3% | 18.3% | 72 | 10.0% | 61.7% |
+| qwen 7B | LLM→Z3 guided + repair | 27.5% [20.3%, 36.1%] | 33.3% | 21.7% | 61 | 13.3% | 58.3% |
+| llama 3B | Direct | 54.2% [45.3%, 62.8%] | 10.0% | 98.3% | 0 | 8.3% | 91.7% |
+| llama 3B | Direct + CoT | 46.7% [38.0%, 55.6%] | 33.3% | 60.0% | 0 | 18.3% | 56.7% |
+| llama 3B | LLM→Z3 | 0.0% [0.0%, 3.1%] | 0.0% | 0.0% | 120 | 0.0% | 100.0% |
+| llama 3B | LLM→Z3 guided | 1.7% [0.5%, 5.9%] | 3.3% | 0.0% | 117 | 0.0% | 98.3% |
+| Gemini 3.5 Flash-Lite | Direct | 76.7% [68.3%, 83.3%] | 78.3% | 75.0% | 0 | 55.0% | 43.3% |
+| Gemini 3.5 Flash-Lite | Direct + CoT | 98.3% [94.1%, 99.5%] | 96.7% | 100.0% | 0 | 96.7% | 3.3% |
+| Gemini 3.5 Flash-Lite | LLM→Z3 | 78.3% [70.1%, 84.8%] | 78.3% | 78.3% | 23 | 65.0% | 13.3% |
+| Gemini 3.5 Flash-Lite | LLM→Z3 guided | 82.5% [74.7%, 88.3%] | 83.3% | 81.7% | 19 | 70.0% | 8.3% |
+| Gemini 3.5 Flash-Lite | LLM→Z3 guided + repair | 97.5% [92.9%, 99.1%] | 98.3% | 96.7% | 2 | 95.0% | 1.7% |
+| Gemini 3.8 Flash | Direct | 100.0% [96.9%, 100.0%] | 100.0% | 100.0% | 0 | 100.0% | 0.0% |
+| Gemini 3.8 Flash | Direct + CoT | 100.0% [96.9%, 100.0%] | 100.0% | 100.0% | 0 | 100.0% | 0.0% |
+| Gemini 3.8 Flash | LLM→Z3 | 80.8% [72.9%, 86.9%] | 85.0% | 76.7% | 21 | 70.0% | 8.3% |
+| Gemini 3.8 Flash | LLM→Z3 guided | 95.8% [90.6%, 98.2%] | 98.3% | 93.3% | 5 | 93.3% | 1.7% |
+| Gemini 3.8 Flash | LLM→Z3 guided + repair | 100.0% [96.9%, 100.0%] | 100.0% | 100.0% | 0 | 100.0% | 0.0% |
 
 "No answer" counts UNKNOWN verdicts (the script failed, or no verdict could be parsed). UNKNOWN is scored as wrong but is neither a false alarm nor a missed bug.
 
-**Direct review is at chance, and biased towards "SAFE".**
+**Small local models: direct review is near chance and biased towards "SAFE".**
 - Neither model's direct verdicts are distinguishable from a coin flip; every interval contains 50%.
 - The errors are very lopsided. qwen catches 25% of the bugs and llama 10%, while both pass 87–98% of the safe functions.
 - **The models barely look at the difference between the twins.** qwen gives both members of a pair the same verdict in 85% of pairs (llama: 92%). In 44 of 60 pairs qwen calls *both* versions SAFE (llama: 42).
@@ -580,12 +557,12 @@ _(The non-LLM reference points are the right-hand panel of the accuracy figure i
 
 For a code-review assistant this is the most dangerous profile: confident, almost uniform "looks safe".
 
-**Chain of thought does not help.**
+**Chain of thought does not help the small local models.**
 - qwen: 55.8% → 56.7%. The models disagree on 29 instances, split 14/15 (McNemar p = 1.0).
 - llama: CoT moves it towards UNSAFE (recall 10% → 33%, specificity 98% → 60%) with no net gain (46.7%, p = 0.23).
 - The CoT transcripts show *confident wrong reasoning*. For `scale_down` (`return x / d;` with precondition `d != 0`), qwen raises exactly the right case, then dismisses it: *"division by −1 can lead to overflow if x is INT_MIN. Specifically, INT_MIN / −1 results in INT_MAX, which is within the range of a 32-bit signed integer"*. It answers SAFE. The true result, 2³¹, is not representable.
 
-**Translation to Z3 is worse overall but better when it runs.** qwen's bare LLM→Z3 scores 40.0%, significantly below direct review (uncorrected p = 0.020; see §6.7 for the corrected family). But 48 of its 120 scripts never produced a verdict. On the **72 instances where the script ran**:
+**For qwen, translation to Z3 is worse overall but better on the executable subset.** qwen's bare LLM→Z3 scores 40.0%, versus direct review's 55.8% (uncorrected p = 0.020; adjusted p = 0.388, so no significant difference after correction). But 48 of its 120 scripts never produced a verdict. On the **72 instances where the script ran**:
 
 | | Accuracy on the 72 executed instances |
 |---|---|
@@ -593,9 +570,9 @@ For a code-review assistant this is the most dangerous profile: confident, almos
 | Direct, same instances | 58.3% |
 | Direct + CoT, same instances | 55.6% |
 
-These subset differences are not significant (p = 0.41 and p = 0.27). The Z3 approach is also the only LLM approach whose errors are not dominated by "SAFE": it has the highest recall of any LLM system (45%).
+These subset differences are not significant (p = 0.41 and p = 0.27). The Z3 approach is also the only LLM approach whose errors are not dominated by "SAFE": it has the highest recall among the small-model approaches (45%).
 
-## 6.3 RQ1: control-flow complexity and bug class
+## 6.3 RQ1: control-flow complexity and bug class (small-model diagnosis)
 
 ![accuracy by tier](figures/fig3_accuracy_by_tier.png)
 
@@ -617,7 +594,7 @@ These subset differences are not significant (p = 0.41 and p = 0.27). The Z3 app
 
 **Bug class matters less than tier.** Direct accuracy is 50–62% in every class. For qwen's bare Z3, overflow is the weakest class (31%): 95% of its bare scripts used unbounded `Int` sorts, in which overflow cannot occur unless an explicit range check is written.
 
-## 6.4 RQ2: can the models write executable, faithful specifications?
+## 6.4 RQ2: executable specifications and failures (small-model diagnosis)
 
 ![Z3 outcomes](figures/fig5_z3_outcomes.png)
 
@@ -672,7 +649,7 @@ The clearest example is `area(w, h) = w * h`. Direct review called the 50,000-bo
 
 ## 6.6 RQ3: does tool knowledge or execution feedback close the gap?
 
-**Guidance made qwen worse.** Accuracy fell from 40.0% to 23.3% (McNemar p = 0.001, significant after Holm correction). The guidance *was* followed:
+**Guidance made qwen worse.** Accuracy fell from 40.0% to 23.3% (McNemar p = 0.0012; Holm-adjusted p = 0.024). The guidance *was* followed:
 
 | qwen 7B | LLM→Z3 | LLM→Z3 guided |
 |---|---|---|
@@ -706,23 +683,7 @@ We did not run llama's repair variant. Only 3 of its 120 guided first attempts e
 
 ## 6.7 Significance
 
-Exact McNemar tests, paired by instance; Holm-corrected over all planned comparisons for both models:
-
-| model            | A          | B                  |   n |   acc_A |   acc_B |   A_only_correct |   B_only_correct |     p |   p_holm |
-|:-----------------|:-----------|:-------------------|----:|--------:|--------:|-----------------:|-----------------:|------:|---------:|
-| llama3.2:3b      | direct     | direct_cot         | 120 |   0.542 |   0.467 |               27 |               18 | 0.233 |    1.000 |
-| llama3.2:3b      | direct     | z3                 | 120 |   0.542 |   0.000 |               65 |                0 | 0.000 |    0.000 |
-| llama3.2:3b      | z3         | z3_guided          | 120 |   0.000 |   0.017 |                0 |                2 | 0.500 |    1.000 |
-| llama3.2:3b      | direct     | hybrid_z3_else_cot | 120 |   0.542 |   0.467 |               27 |               18 | 0.233 |    1.000 |
-| llama3.2:3b      | direct_cot | hybrid_z3_else_cot | 120 |   0.467 |   0.467 |                0 |                0 | 1.000 |    1.000 |
-| qwen2.5-coder:7b | direct     | direct_cot         | 120 |   0.558 |   0.567 |               14 |               15 | 1.000 |    1.000 |
-| qwen2.5-coder:7b | direct     | z3                 | 120 |   0.558 |   0.400 |               40 |               21 | 0.020 |    0.184 |
-| qwen2.5-coder:7b | direct_cot | z3_repair          | 120 |   0.567 |   0.275 |               49 |               14 | 0.000 |    0.000 |
-| qwen2.5-coder:7b | z3         | z3_guided          | 120 |   0.400 |   0.233 |               28 |                8 | 0.001 |    0.012 |
-| qwen2.5-coder:7b | z3_guided  | z3_repair          | 120 |   0.233 |   0.275 |                0 |                5 | 0.062 |    0.500 |
-| qwen2.5-coder:7b | direct     | z3_repair          | 120 |   0.558 |   0.275 |               50 |               16 | 0.000 |    0.000 |
-| qwen2.5-coder:7b | direct     | hybrid_z3_else_cot | 120 |   0.558 |   0.633 |               17 |               26 | 0.222 |    1.000 |
-| qwen2.5-coder:7b | direct_cot | hybrid_z3_else_cot | 120 |   0.567 |   0.633 |               16 |               24 | 0.268 |    1.000 |
+Original Holm-corrected [McNemar tests](../results/analysis/mcnemar.csv) show that guidance hurts qwen (p = 0.024), while CoT and repair improve 3.5 over direct and guided respectively (both p < 0.001). CoT versus repair has no significant difference for 3.5 (3 versus 2 discordant cases; p = 1.0); 3.8 scores 120/120 with both. Pair-level sensitivity checks appear in §6.8.2.
 
 ## 6.8 Derived policies: combining the paradigms
 
@@ -737,11 +698,81 @@ These are computed from existing records, with no extra model calls:
 | Direct + CoT, witness-validated | 58.3% | 16.7% | 100% | 100% |
 | LLM→Z3, witness-validated | 43.3% | 26.7% | 60.0% | 100% |
 
-**The hybrid is the best LLM-based system in the study.** It uses the tool where the model can drive it and falls back to natural-language reasoning where it cannot. It doubles recall relative to direct review (25% → 53%) at a cost of 13 points of specificity. Its accuracy gain over direct review (+7.5 points) is not significant with n = 120 (p = 0.22).
+**For qwen, the bare-Z3 hybrid is the best of these original variants.** It uses the tool where the model can drive it and falls back to natural-language reasoning where it cannot. It doubles recall relative to direct review (25% → 53%) at a cost of 13 points of specificity. Its accuracy gain over direct review (+7.5 points) is not significant with n = 120 (p = 0.22).
 
-**Witness validation is a free precision upgrade.** Reporting a bug only when its witness reproduces removes every false alarm in every approach (precision 100%), at the cost of recall.
+**Witness validation removes the observed false alarms.** Among the filtered policies issuing bug reports, no false alarms remain on this benchmark, at the cost of recall. Precision is undefined when no bugs are reported. The historical filtering rule's SAFE output means no confirmed bug report, rather than a proof of safety.
 
-## 6.9 RQ4: model strength (Gemini 3.5 Flash-Lite)
+### 6.8.1 Does combining Z3 and CoT help?
+
+Replay-required scores below apply the same confirmation rule to every method.
+Cells show correct answers / confirmed bugs (out of 120 / 60); UNKNOWN counts as incorrect.
+Full [comparisons](../results/analysis/hybrid_comparison.csv) and [case changes](../results/analysis/hybrid_cases.csv) use saved responses and replay statuses.
+
+| Model | CoT | Z3+repair | Combined | Combined UNKNOWN |
+|---|---|---|---|---|
+| qwen 7B | 66 / 10 | 25 / 12 | **75 / 19** | 5 |
+| Gemini 3.5 Flash-Lite | 118 / 58 | 117 / 59 | **119 / 59** | 0 |
+| Gemini 3.8 Flash | 119 / 59 | **120 / 60** | **120 / 60** | 0 |
+
+For 3.5, combination fixes `T1-DIV-05-U` and `T4-OVF-02-U` but loses
+`T3-BND-04-U` to Z3's false SAFE: net +1 correct answer. Original 3.8 CoT
+classifies 120/120 correctly, but its `T1-BND-03-U` input (`size=1,h=-1`)
+does not reproduce; replay-required scoring changes it to UNKNOWN. Repair confirms
+all 60 bugs and never needs fallback: its advantage is evidence, not original classification.
+
+![Correct classifications and working bug inputs](figures/fig9_review_evidence.png)
+
+**Figure 9.** Original verdict scores and confirmed bug inputs. This hybrid falls
+back only on UNKNOWN, unlike the replay-required table. Llama repair was not run.
+
+The replay-required combination costs 1.28 calls/727 output tokens per case for
+3.5 (CoT: 1/562), and 3.80/2,577 for qwen (CoT: 1/661). These exploratory
+policies reuse existing confirmation checks; failed replay never establishes safety.
+
+### 6.8.2 Repair efficiency and sensitivity to related cases
+
+Saved-trace simulations change neither prompts nor the live runner. The table
+shows correct verdicts out of 120, with total estimated LLM calls in parentheses;
+zero repairs still requires an initial script.
+
+| Model | No repairs | At most 1 repair | At most 2 repairs | At most 3 repairs |
+|---|---|---|---|---|
+| qwen 7B | 28 (120 calls) | 32 (207) | 32 (290) | 33 (373) |
+| Gemini 3.5 Flash-Lite | 99 (120) | 113 (141) | 116 (148) | 117 (152) |
+| Gemini 3.8 Flash | 115 (120) | 118 (125) | 119 (127) | 120 (128) |
+
+Stopping after the first consecutive identical nonempty script saves 134 qwen
+calls: standalone repair falls 373→239 with 33 correct/12 confirmed bugs;
+replay-required fallback falls 456→322 with 75/19. The duplicate call is counted.
+Neither Gemini run repeats scripts.
+
+One repair plus fallback matches qwen's full hybrid in 290 rather than 456 calls.
+Immediate fallback after guided Z3 gives both Gemini models 120/120 and 60 confirmed
+bugs in 141/125 calls, versus full repair's 154/128. For 3.5, full repair loses
+`T3-BND-04-U`: initial UNKNOWN allows CoT's confirmed bug, while later false SAFE
+blocks fallback. These post-hoc budgets require held-out validation. Per-turn tokens
+were not logged, so token savings and fresh runtime remain unknown.
+
+![Repair cost and accuracy](figures/fig8_repair_efficiency.png)
+
+**Figure 8.** Left = fewer calls; up = more correct answers. Numbers = repairs
+allowed; crosses = stopping on repetition. Blue uses original Z3 verdicts; green
+adds replay-required CoT fallback, so reporting rules also differ.
+
+Whole-pair resampling and sign-flip tests keep twins together (20,000 draws;
+seed 3263). A separate 30-test Holm family finds no full-hybrid superiority:
+qwen's replay-required accuracy gain is 7.5 points (95% interval [2.5,12.5];
+adjusted p = 0.305), 3.5's is 0.83 ([-1.67,4.17]; p = 1), and 3.8's stricter-score
+gain is 0.83 ([0,2.5]; p = 1). Original 3.8 classification remains tied at 100%.
+3.5 repair versus guidance remains significant (adjusted p = 0.0017).
+Constructed pairs may share templates; non-significance and ceiling intervals do
+not establish equivalence. Methods: [paired bootstrap](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.bootstrap.html)
+and [permutations](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.permutation_test.html).
+Supporting CSVs: [efficiency](../results/analysis/repair_efficiency.csv),
+[case changes](../results/analysis/repair_cases.csv), [statistics](../results/analysis/pair_sensitivity.csv).
+Reproduction commands and output locations: README.
+
+## 6.9 RQ4: model strength (both Gemini models)
 
 All five approaches ran on `gemini-3.5-flash-lite` with the same prompts and protocol as the local models (temperature 0, 4,096 output tokens, API-default thinking: the model rejects an explicit thinking budget, and no thinking tokens were observed).
 
@@ -793,11 +824,14 @@ All five approaches ran on `gemini-3.5-flash-lite` with the same prompts and pro
 
 **5. What is left.** Z3 + repair is wrong on three instances: one missed bug (T3-BND-04-U, the unsigned loop counter that wraps) and two safe loop/shift functions on which the solver timed out (T3-BND-01-S, T4-SHF-01-S). Chain of thought is wrong on two bugs (T1-DIV-05-U, where unsigned wraparound makes `slots + 1u` zero, and T4-OVF-02-U, which needs a large accumulation).
 
-**6. Chain of thought and Z3 + repair are tied on accuracy.** 98.3% vs 97.5% (3 vs 2 instances, p = 1.0). Both report only confirmed bugs (precision 100%). The hybrid "Z3 + repair, else CoT" reaches 99.2% (recall 98.3%, specificity 100%). Costs per instance, in output tokens and LLM calls: direct 75, CoT 562, bare Z3 824, guided 571, repair 718 (1.27 calls). Wall-clock times are not comparable with the local runs, because the Gemini client throttles itself to 10 requests per minute.
+**6. No significant accuracy difference was detected between CoT and Z3 + repair.** 98.3% vs 97.5% (3 vs 2 instances, p = 1.0). Both report only confirmed bugs (precision 100%). The hybrid "Z3 + repair, else CoT" reaches 99.2% (recall 98.3%, specificity 100%). Costs per instance, in output tokens and LLM calls: direct 75, CoT 562, bare Z3 824, guided 571, repair 718 (1.27 calls). Wall-clock times are not comparable with the local runs, because the Gemini client throttles itself to 10 requests per minute.
 
-**Gemini 3.8 Flash.** The planned second model could not be run, because of a free-tier cap of 20 requests per day. The picture above therefore rests on one strong model.
+**Gemini 3.8 Flash.** All approaches are complete (§6.2): bare/guided/repaired
+Z3 score 80.8%/95.8%/100%; direct and CoT also score 100%. CoT confirms 59 bugs
+versus repair's 60. The full hybrid never selects CoT. Hidden thinking persists
+despite `thinkingBudget: 0`; both strong models share a vendor.
 
-## 6.10 Cost## 6.10 Cost
+## 6.10 Cost
 
 | qwen 7B | LLM calls | Output tokens | Wall-clock per instance |
 |---|---|---|---|
@@ -814,7 +848,7 @@ On a laptop, every LLM approach costs 2–40× more time per instance than CBMC,
 
 # 7. Discussion
 
-*Scope: sections 7.1 to 7.5 mainly describe the two small local models. Section 7.6 discusses what changes with a stronger model, now measured with Gemini 3.5 Flash-Lite (§6.9).*
+Sections 7.1–7.2 diagnose the small local models. Sections 7.3–7.6 connect those findings to both completed Gemini evaluations and the combined-policy analysis.
 
 ## 7.1 What the comparison shows
 
@@ -855,7 +889,7 @@ This matters for the design of neurosymbolic pipelines. With a small model, the 
 
 The study's most transferable result concerns *evidence*, not accuracy.
 
-- **A bug report can be checked mechanically.** We re-ran every counterexample on the real code. Every false alarm of the bare Z3 approach failed replay, and so did 11 of its 27 correct-but-unconfirmed bug reports. Reporting only confirmed counterexamples gave 100% precision for every approach. This check needs no ground truth and costs milliseconds; it should be standard in any LLM code-review pipeline.
+- **A bug report can be checked mechanically.** We re-ran every counterexample on the real code. For qwen's bare Z3 approach, every false alarm failed replay, and so did 11 of its 27 correctly classified bug reports. Reporting only confirmed counterexamples gave 100% precision for every approach. This check needs no ground truth and costs milliseconds; it should be standard in any LLM code-review pipeline.
 - **A "safe" verdict cannot be checked this way.**
   - For direct review, "SAFE" is an unsupported opinion, and it is the models' default.
   - For the Z3 approach, UNSAT is a proof of the *encoded* formula. qwen produced 9 such "proofs" for functions that do have bugs.
@@ -864,11 +898,12 @@ The study's most transferable result concerns *evidence*, not accuracy.
 
 ## 7.4 Combining the paradigms
 
-The best policy for each model combines the two paradigms: use the solver's answer when the generated script runs, and fall back to chain-of-thought otherwise.
-- **qwen 7B:** 63.3% accuracy, and recall doubles relative to direct review (53% vs 25%). The accuracy gain is not significant at n = 120 (p = 0.22).
-- **Gemini 3.5 Flash-Lite:** "Z3 + repair, else CoT" reaches 99.2% (recall 98.3%, specificity 100%), one instance short of perfect. Both of its ingredients are already at 97.5–98.3%, so the gain is a single instance.
-- It is cheap: one CoT call plus one translation call per function.
-- With witness validation layered on top, its bug reports are fully trustworthy, while its "safe" verdicts still carry no guarantee.
+Combination helps selectively (§6.8): original bare-Z3 fallback reaches 63.3% for
+qwen; replay-required repair fallback scores 75/120 versus CoT's 66/120. For 3.5,
+full repair fallback gains two CoT cases but loses one (119 versus 118). For 3.8,
+repair alone is perfect; its extra confirmed input is an evidence gain.
+Calls include repairs and fallback; earlier stopping can save calls, but budgets
+are post hoc and corrected pair-level tests do not establish superiority.
 
 ## 7.5 Against the non-LLM baselines
 
@@ -877,22 +912,14 @@ CBMC, a 20-year-old bounded model checker, decides every instance correctly in 1
 - Our instances are small, self-contained C functions with explicit preconditions, which is exactly where CBMC shines.
 - The realistic role for an LLM here is not to replace the verifier but to *produce what the verifier needs* (harnesses, preconditions, specifications) and let a sound tool decide. Our counterexample-replay results support that division of labour.
 
-## 7.6 Does a stronger model change the picture? (measured with Gemini 3.5 Flash-Lite)
+## 7.6 What changes with stronger models?
 
-Yes, and in a way that changes the headline. Sections 7.1 to 7.4 describe the small local models. A stronger model (§6.9) behaves differently on all three counts:
-- **Direct review.** It stops being at chance (76.7%), and with chain of thought it is nearly perfect (98.3%). The "safe" bias and the insensitivity to preconditions seen in the small models are properties of those models, not of direct review as such.
-- **Tool knowledge.** The same guidance that made qwen worse (40% → 23%) helped Gemini (78% → 82.5%), and repair feedback, which qwen ignored (83% repeated), was almost always acted on (0% repeated). Whether prompting and feedback help depends on whether the model can use them. This agrees with the diagnosis in §7.2 that the small models' bottleneck was *using* the knowledge, not lacking it.
-- **Executability.** From 40–60% for qwen to 98% after repair. When the script runs it is almost always faithful, so the selective-accuracy advantage of Z3 that was hidden in the small models shows up in overall accuracy.
-
-**What the Z3 pipeline offers a strong model.** Chain of thought and Z3 + repair are tied on accuracy and both report only confirmed bugs. The remaining difference is the *kind* of evidence behind the answer:
-- A chain-of-thought "SAFE" is prose that a reader must trust.
-- A Z3 + repair "SAFE" is a specification plus a solver proof that can be inspected, re-run, and cross-checked with another tool (for example CBMC). That is what the Responsible AI recommendations of §8.7 ask for, but it comes at a cost: a longer pipeline, up to four calls, and instances where the solver gives up (3 of 120 here).
-- On a benchmark where a strong model reaches 98% by reasoning alone, the benefit of the formal route is therefore auditability, not accuracy.
-
-**Caveats.**
-- This is one strong model. The second (Gemini 3.8 Flash) could not be run, so we cannot say how much of the effect is the model's strength and how much is this particular model.
-- The near-perfect chain-of-thought score may partly reflect idiom recognition: the instances are built around well-known C pitfalls, and a model trained on a lot of code may know them. Two observations argue against pure pattern matching: the model scores 98% on precondition twins, where recognising an idiom alone gets exactly one twin wrong, and the small models do not benefit.
-- The benchmark is authored with an AI assistant (§9.3). A stronger model may find such instances easier than naturally occurring bugs.
+Both Gemini models use guidance and repair successfully; neither repeats repair
+scripts. Strong direct reasoning also works: 3.5 CoT scores 98.3%, and 3.8 direct/CoT
+score 100%. No significant CoT-versus-repair difference is detected for 3.5;
+3.8 saturates the benchmark. Z3 adds an inspectable specification, but UNSAT requires
+faithful translation. Both approaches supply replayable bug inputs; repair confirms
+one more than CoT for 3.8. Shared vendor, hidden thinking and synthetic cases limit generalisation.
 
 # 8. Responsible AI Considerations
 
@@ -972,7 +999,7 @@ We group threats following the usual internal / construct / external split and s
 - **Any-class confirmation.** A witness is confirmed by a sanitizer report of *any* class, not necessarily the instance's labelled category. This is correct under the specification (any violation makes the function UNSAFE), but it means a confirmation does not certify that the model understood the *intended* bug.
 - **Repair feedback asymmetry.** Repair is triggered by errors and non-reproducing counterexamples, never by UNSAT. This is a property of the method, not a confound, but it means repair can only act on instances that ended UNKNOWN or SAT with an unconfirmed counterexample. Its effect on recall depends on whether the corrected scripts become SAT.
 - **Output-token limit.** All local runs cap generation at 3,072 tokens. Runaway outputs (repetition loops) are counted as failures when they hit this cap; a larger cap would make them slower, not correct, since the transcripts show the loops do not terminate on their own. The cap does, however, bound the length of legitimate long scripts and CoT answers; no qwen output that finished normally came close to it (maximum 1,072 tokens). The exception is five llama CoT answers that also ran to the cap; their verdicts were recovered by the keyword fallback (all UNSAFE, two of them correct).
-- **Incomplete llama run.** `llama3.2:3b` was not run with `z3_repair` (Section 6.6): its guided first attempts never produced an executable script, and the repair run would have cost roughly five hours of local compute. Its repair numbers are therefore missing, not zero.
+- **Incomplete llama run.** `llama3.2:3b` was not run with `z3_repair` (Section 6.6): only three of its 120 guided first attempts produced an executable script, and the repair run would have cost roughly five hours of local compute. Its repair numbers are therefore missing, not zero.
 - **Dataset edits during experimentation.** Some reference encodings (e.g. `T3-OVF-02`) were revised while runs were in progress. Reference encodings are never shown to the models, so LLM records are unaffected as long as the C code and preconditions did not change. The gold-Z3 baseline and the validation report were regenerated on the frozen dataset (120/120 validated; gold Z3 100%).
 
 ## 9.2 Construct validity
@@ -995,8 +1022,9 @@ We group threats following the usual internal / construct / external split and s
 
 - **Small, synthetic dataset.** 120 instances (60 pairs) give 95% confidence intervals of roughly ±9 percentage points, and per-tier or per-class breakdowns are much smaller (T4 has 16 instances, and the shift class has 20). Instances are short functions of 3–12 lines written to isolate a single bug. Real code has longer functions, pointers and structs, heap data structures, global state, floating point and library calls, all outside our supported C subset (32-bit `int`/`unsigned` scalars and arrays, with `long long` only inside expressions). The results speak to the *core reasoning step* of invariant checking, not to end-to-end review of production code.
 - **Author bias.** The instances, witnesses and reference encodings were written with the help of one AI assistant (Claude) and reviewed by the team. Bug idioms, naming and the style of the reference encodings may reflect that assistant's habits. They may also be easier or harder for other LLMs than naturally occurring bugs. Using models from other vendors for evaluation, and validating with non-LLM oracles, mitigates circularity in the *labels* but not this distributional bias.
-- **Few models.** Two small local models (`qwen2.5-coder:7b`, `llama3.2:3b`) and one stronger API model (`gemini-3.5-flash-lite`) were fully evaluated. The conclusions about whether translation "helps" differ between the small and the strong model, so a third or fourth point (such as `gemini-3.8-flash`, which the free-tier cap prevented) would clarify how much of the effect is strength and how much is the particular model. Gemini 3.5 Flash-Lite also ran with the API's default thinking setting (it rejects an explicit budget), whereas the other models have no hidden reasoning.
-- **Ceiling effect.** A strong model reaches 97.5–98.3% on this benchmark, so differences among the best approaches are one to three instances and not significant.
+- **Few models.** Two small local models and two strong API models were evaluated; llama's repair run was skipped. Both strong models are Gemini, so strength and vendor cannot be separated. 3.5 used API-default thinking with none observed; 3.8 emitted hidden thinking despite `thinkingBudget: 0`. Direct prompting is therefore not an equally controlled reasoning condition across models.
+- **Ceiling effect.** 3.8 direct review, CoT and Z3 + repair reach 120/120; the benchmark cannot rank their classification accuracy. The 60-versus-59 confirmed-input difference is an evidence outcome, not a classification improvement.
+- **Exploratory policies and related cases.** Combined-policy budgets were inspected after seeing these results and need held-out validation. Pair-level checks keep twins together, but different pairs can still share templates. A small gain or non-significant test does not establish superiority or equivalence.
 - **One solver, one protocol.** We fix Z3 and one encoding protocol, with a solver-managed check and a single violation disjunction. Other designs might change the error profile, such as letting the model call `check()` itself, using SMT-LIB directly, or decomposing per operation.
 - **Solver tractability.** One pair was excluded because both oracles time out (Section 4.6), and one reference encoding needed a lemma abstraction. On harder, more arithmetic-heavy code, the translation approach may fail for solver reasons regardless of the LLM's skill. Our benchmark under-represents such cases by construction.
 - **Platform.** All measurements were taken on macOS (Apple clang 17, `sandbox-exec`). Sanitizer messages and sandbox behaviour may differ on other platforms. This does not affect labels but could affect error classification.
@@ -1004,35 +1032,21 @@ We group threats following the usual internal / construct / external split and s
 
 # 10. Conclusion and Future Work
 
-We asked whether an LLM is a better code-safety reviewer when it judges code directly or when it translates the question into a constraint problem for Z3. The answer depends strongly on the model.
+Results depend on the model. Small models struggle with executable Z3; guidance
+hurts qwen and repairs usually repeat. Both Gemini models benefit from guidance
+and repair but also classify accurately directly. 3.5 CoT scores 98.3% versus
+repair's 97.5%; 3.8 direct, CoT and repair all score 100%.
 
-**Findings for small open-weight models (qwen 7B, llama 3B):**
-- **Direct review** answers every question but does not reason about the code. Its accuracy is at chance, insensitive to difficulty, and biased towards "safe". Chain of thought does not help.
-- **Translation to Z3** reasons correctly far more often when the generated specification runs, especially about preconditions and on flat arithmetic. But writing an executable, faithful Z3 script is beyond these models' reliability: they hallucinate API names, confuse Python and Z3 operators, mistranslate C semantics, and fall into repetition loops.
-- **More tool knowledge in the prompt made this worse**, and greedy repair loops mostly repeated themselves.
+Combination raises 3.5 from CoT's 118/120 to 119/120. Repaired Z3 confirms 60 bugs
+for 3.8 versus CoT's 59, despite equal classifications. Earlier fallback reaches
+120/120 and 60 confirmed bugs for both Gemini models in 141/125 calls; stopping
+repeated scripts saves 134 qwen calls. These post-hoc findings need held-out
+validation; corrected tests do not establish full-hybrid superiority.
 
-**Findings for a stronger model (Gemini 3.5 Flash-Lite):**
-- Chain of thought reaches **98.3%** and Z3 with guidance and repair **97.5%**, against 76.7% for direct answers. They are statistically tied.
-- Guidance helps and repair works: 98% of final scripts execute, none of the repair attempts repeated itself, and every reported bug was confirmed on the real code.
-- The Z3 pipeline's advantage is then an auditable specification and solver proof behind each "safe" verdict, not a higher score.
-
-**Across models:**
-- Counterexample replay makes bug reports trustworthy for every approach, whereas "safe" verdicts cannot be checked in the same way.
-- Classical verification tools (CBMC) remain at 100% in under two seconds per function on this kind of code.
-
-**Recommendations for practice:**
-- Treat confirmed counterexamples as actionable.
-- Treat UNSAT and "looks safe" as evidence requiring human review of the specification.
-- Use LLMs to *draft* specifications and harnesses for sound tools, rather than to sign off on safety.
-- Do not generalise from a small model to a strong one, or the other way round: the same prompt that hurt one helped the other.
-
-**Future work:**
-1. Run `gemini-3.8-flash` (it needs an API key with a higher quota; see `report/RUN_STATUS.md`) and other strong models to see how much of the effect is model strength.
-2. Test, with thinking enabled, whether strong models still produce executable but unfaithful encodings.
-3. Try sampled or fresh-context repair for the small models, and constrain decoding to the real Z3 API.
-4. Add a faithfulness check for UNSAT answers, e.g. differential checks against CBMC or mutation of the generated specification.
-5. Extend the benchmark beyond single functions to pointers, structs and library calls, and add harder instances, since a strong model nearly saturates the current one.
-
+Z3 adds inspectable specifications; UNSAT requires faithful translation, and replay
+cannot prove safety. CBMC/reference Z3 solve all 120 cases without LLM calls.
+Future work: harder realistic code, more vendors with controlled thinking,
+held-out repair budgets, UNSAT faithfulness checks and constrained or sampled repair.
 
 # References
 

@@ -157,7 +157,7 @@ Caveat: `thinkingBudget: 0` does **not** fully disable 3.8 Flash's hidden reason
 
 - Guidance and repair now **help**: 78–81% → 97.5–100%
 - No repair attempt repeated itself; "did you mean" fixed 9 of 10 invented names
-- Best direct approach and Z3 + repair are **statistically tied**; the benchmark is saturated by 3.8 Flash
+- No significant difference detected between the best direct approach and Z3 + repair; the benchmark is saturated by 3.8 Flash
 
 ---
 
