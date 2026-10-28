@@ -75,3 +75,102 @@ def test_derived_policies():
     assert d["validated_direct_cot", "B-U"] == "SAFE"  # unconfirmed UNSAFE claims are dropped
     assert d["validated_direct_cot", "A-U"] == "UNSAFE"
     assert d["validated_z3_repair", "B-S"] == "SAFE"
+
+
+@pytest.mark.parametrize("z3_approach", ["z3", "z3_repair"])
+def test_hybrid_copies_selected_answer_and_preserves_inputs(z3_approach):
+    z = _records().assign(model="m", approach=z3_approach)
+    z["witness"] = [{"x": 0}, None, {"x": 99}, {"x": 2}]
+    z["witness_detail"] = ["Z3 confirmed", "", "Z3 failed", "Z3 spurious"]
+    z["violation"] = [None, None, None, None]
+    z["exec_kind"] = ["bounds", None, None, None]
+    z["explanation"] = [None, None, None, None]
+    z["parse"] = [None, None, None, None]
+    z["transcript"] = [[{"role": "assistant", "content": "Z3 script"}]] * len(z)
+    z["z3_status"] = ["sat", "unsat", "error", "sat"]
+    z["attempts"] = [[{"status": st}] for st in z["z3_status"]]
+    c = _records().assign(model="m", approach="direct_cot",
+                          verdict=["SAFE", "UNSAFE", "UNSAFE", "SAFE"],
+                          witness_status=[None, "confirmed", "confirmed", None])
+    c["witness"] = [None, {"x": 10}, {"x": 1}, None]
+    c["witness_detail"] = ["", "CoT confirmed", "CoT confirmed", ""]
+    c["violation"] = ["none", "overflow", "overflow", "none"]
+    c["exec_kind"] = [None, "overflow", "overflow", None]
+    c["explanation"] = ["CoT says safe", "CoT found overflow", "CoT found overflow", "CoT says safe"]
+    c["parse"] = "json"
+    c["transcript"] = [[{"role": "assistant", "content": "CoT answer"}]] * len(c)
+    # CoT rows need not arrive in the same order as Z3 rows.
+    records = pd.concat([z, c.iloc[::-1]], ignore_index=True)
+    before = records.copy(deep=True)
+
+    derived = derived_policies(records)
+    hybrid = derived[derived["approach"] == f"hybrid_{z3_approach}_else_cot"].set_index("instance")
+    z = z.set_index("instance")
+    c = c.set_index("instance")
+    answer_fields = ["verdict", "violation", "witness", "witness_status", "witness_detail",
+                     "exec_kind", "explanation", "parse", "transcript"]
+    for iid in z.index:
+        expected = c.loc[iid] if z.loc[iid, "verdict"] == "UNKNOWN" else z.loc[iid]
+        pd.testing.assert_series_equal(hybrid.loc[iid, answer_fields], expected[answer_fields])
+        assert hybrid.loc[iid, "answer_source"] == expected["approach"]
+        assert hybrid.loc[iid, "correct"] == (expected["verdict"] == expected["gold"])
+        assert hybrid.loc[iid, "decided"] == (expected["verdict"] != "UNKNOWN")
+        assert hybrid.loc[iid, "z3_status"] == z.loc[iid, "z3_status"]
+        assert hybrid.loc[iid, "attempts"] == z.loc[iid, "attempts"]
+    pd.testing.assert_frame_equal(records, before)
+    assert metrics(hybrid)["witness_confirmed"] == 2
+
+
+@pytest.mark.parametrize("cot_verdict", ["SAFE", "UNKNOWN"])
+def test_hybrid_fallback_clears_stale_witness(cot_verdict):
+    z = _records().iloc[[2]].assign(model="m", approach="z3", witness_status="not_reproduced")
+    z["witness"] = [{"x": 99}]
+    z["witness_detail"] = "Old Z3 counterexample"
+    c = z.assign(approach="direct_cot", verdict=cot_verdict, witness=None,
+                 witness_status=None, witness_detail="")
+
+    derived = derived_policies(pd.concat([z, c], ignore_index=True))
+    answer = derived[derived["approach"] == "hybrid_z3_else_cot"].iloc[0]
+    assert answer["verdict"] == cot_verdict
+    assert answer["answer_source"] == "direct_cot"
+    assert pd.isna(answer["witness"]) and pd.isna(answer["witness_status"])
+    assert answer["witness_detail"] == ""
+    assert answer["decided"] == (cot_verdict != "UNKNOWN")
+
+
+@pytest.mark.parametrize("z3_approach", ["z3", "z3_repair"])
+@pytest.mark.parametrize("cot_verdict", ["SAFE", "UNSAFE", "UNKNOWN"])
+def test_hybrid_counts_only_used_calls_and_tokens(z3_approach, cot_verdict):
+    z = _records().assign(model="m", approach=z3_approach,
+                          input_tokens=[100, 200, 300, 400], llm_latency_s=2.0)
+    z["llm_calls"] = [1, 2, 3, 4] if z3_approach == "z3_repair" else 1
+    c = _records().assign(model="m", approach="direct_cot",
+                          verdict=["SAFE", "UNSAFE", cot_verdict, "SAFE"],
+                          input_tokens=[1000, 2000, 3000, 4000],
+                          output_tokens=[110, 120, 130, 140], llm_calls=1, llm_latency_s=5.0)
+    records = pd.concat([z, c.iloc[::-1]], ignore_index=True)
+    before = records.copy(deep=True)
+
+    derived = derived_policies(records)
+    hybrid = derived[derived["approach"] == f"hybrid_{z3_approach}_else_cot"].set_index("instance")
+    costs = ["llm_calls", "input_tokens", "output_tokens"]
+    expected = z.set_index("instance")[costs].copy()
+    # Only B-U needs fallback. Count CoT even if it also returns UNKNOWN.
+    expected.loc["B-U"] = [4 if z3_approach == "z3_repair" else 2, 3300, 160]
+    pd.testing.assert_frame_equal(hybrid[costs], expected)
+    assert (hybrid["cost_basis"] == "estimated_sequential").all()
+    assert hybrid["wall_s"].isna().all() and hybrid["llm_latency_s"].isna().all()
+    assert metrics(hybrid)["mean_llm_calls"] == expected["llm_calls"].mean()
+    assert metrics(hybrid)["mean_out_tokens"] == expected["output_tokens"].mean()
+    assert math.isnan(metrics(hybrid)["mean_wall_s"])
+    pd.testing.assert_frame_equal(records, before)
+
+
+def test_hybrid_does_not_treat_missing_token_usage_as_zero():
+    z = _records().iloc[[2]].assign(model="m", approach="z3", input_tokens=100)
+    c = z.assign(approach="direct_cot", verdict="SAFE", input_tokens=math.nan, llm_calls=1)
+
+    derived = derived_policies(pd.concat([z, c], ignore_index=True))
+    answer = derived[derived["approach"] == "hybrid_z3_else_cot"].iloc[0]
+    assert pd.isna(answer["input_tokens"])
+    assert answer["llm_calls"] == 3

@@ -57,7 +57,7 @@ def test_gemini_config():
     for m in llms:
         assert (m.temperature, m.max_tokens) == (0.0, 4096)
     # flash-lite rejects thinkingBudget, so only 3.8 Flash sets it
-    assert [m.opts for m in llms] == [{"rpm": 10}, {"thinking_budget": 0, "rpm": 10}]
+    assert [m.opts for m in llms] == [{"rpm": 10}, {"thinking_budget": 0, "rpm": 60}]
 
 
 def test_cache_key_depends_on_options():
