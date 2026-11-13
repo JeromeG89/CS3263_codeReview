@@ -14,7 +14,7 @@ Code, data, raw model outputs and full-length companion documents (`REPORT.md`, 
 
 ## Abstract
 
-We study one sub-problem of an AI assistant for software engineering: deciding whether a C function can violate a memory or arithmetic safety invariant (out-of-bounds access, division by zero, signed overflow, invalid shift) under its callers' preconditions. We compare *direct review* by an LLM (with or without chain of thought) with *translation to a tool*, where the LLM writes a Z3 specification that the SMT solver decides (optionally with guidance and execution-feedback repair). On a validated benchmark of 120 functions in 60 minimal pairs, small local models (qwen2.5-coder 7B, llama3.2 3B) review at chance (54–56%) and rarely write executable Z3 (0–60%). Strong models reverse this: Gemini 3.5 Flash-Lite reaches 98.3% with chain of thought and 97.5% with Z3 + repair (a tie), and Gemini 3.8 Flash scores 100% with direct review, chain of thought and Z3 + repair alike. For strong models guidance and repair turn a 78–81% translator into a near-perfect one, but the solver adds auditability rather than accuracy, and CBMC decides all 120 instances without an LLM. Counterexamples can be checked mechanically, so bug reports become trustworthy; "safe" verdicts cannot.
+We study one sub-problem of an AI assistant for software engineering: deciding whether a C function can violate a memory or arithmetic safety invariant (out-of-bounds access, division by zero, signed overflow, invalid shift) under its callers' preconditions. We compare *direct review* by an LLM (with or without chain of thought) with *translation to a tool*, where the LLM writes a Z3 specification that the SMT solver decides (optionally with guidance and execution-feedback repair). On a validated benchmark of 120 functions in 60 minimal pairs, small local models (qwen2.5-coder 7B, llama3.2 3B) review at chance (54–56%) and rarely write executable Z3 (0–60%). Strong models reverse this: Gemini 3.5 Flash-Lite reaches 98.3% with chain of thought and 97.5% with Z3 + repair (no significant difference), and Gemini 3.8 Flash scores 100% with direct review, chain of thought and Z3 + repair alike. For strong models, guidance and repair produce near-perfect translations. Z3 adds inspectable specifications and, on 3.8, 60 confirmed bug inputs versus CoT's 59. UNSAT requires faithful translation; CBMC solves all 120 cases.
 
 ---
 
@@ -163,15 +163,23 @@ The gold Z3 encodings and CBMC are both 100% correct (0.5 s and 1.7 s per instan
 
 Every Gemini approach beats every small-model approach (paired p < 0.001 against qwen), and the "safe" bias disappears.
 
-**Gemini 3.5 Flash-Lite.** CoT gains 26 instances and loses none (p < 10⁻⁴). Guidance helps slightly (78.3% → 82.5%, n.s.) and repair is decisive (→ 97.5%, 18 gained, none lost, p_holm < 0.001; executability 84% → 98%). **No repair attempt repeated the previous script**; a did-you-mean hint fixed 9 of 10 invented names. CoT and Z3 + repair are **tied** (3 vs 2 discordant, p = 1.0); the hybrid "Z3 + repair, else CoT" reaches 99.2%.
+**Gemini 3.5 Flash-Lite.** CoT gains 26 instances and loses none (p < 10⁻⁴). Guidance helps slightly (78.3% → 82.5%, n.s.) and repair is decisive (→ 97.5%, 18 gained, none lost, p_holm < 0.001; executability 84% → 98%). **No repair attempt repeated the previous script**; a did-you-mean hint fixed 9 of 10 invented names. CoT versus Z3 + repair shows no significant accuracy difference (3 vs 2 discordant, p = 1.0); the hybrid "Z3 + repair, else CoT" reaches 99.2%.
 
 **Gemini 3.8 Flash.** Direct review, CoT and Z3 + repair are all perfect on 120/120; the benchmark is saturated. Only bare translation has clear errors: 80.8%, significantly below direct review (23 vs 0 discordant, p_holm < 10⁻⁵), with 21 failed scripts (10 hallucinated APIs, 6 solver time-outs, 5 type/sort errors) and 2 missed bugs. Guidance fixes most of this (→ 95.8%, p_holm = 0.003; hallucinated APIs 10 → 0) and repair the rest (→ 100%, 5 vs 0, p = 0.06). Even for this model bare Z3 drops from 90% on T1 to 65% on loops and 63% on helpers.
 
-**The common pattern.** For both strong models guidance and repair turn a 78–81% translator into a 97.5–100% one, the reverse of the small models, and the best direct approach ties Z3 + repair. 3.8 Flash needs no CoT prompt, possibly because of its residual hidden reasoning (§5).
+**The common pattern.** For both strong models guidance and repair turn a 78–81% translator into a 97.5–100% one, the reverse of the small models, with no significant CoT-versus-repair difference for 3.5 and identical classification scores for 3.8. 3.8 Flash needs no CoT prompt, possibly because of its residual hidden reasoning (§5).
 
 ### 6.6 Combining paradigms and cost
 
 For qwen, the hybrid (bare Z3 when it runs, else CoT) is the best small-model system: 63.3% accuracy and recall doubled vs direct (53% vs 25%), though not significant (p = 0.22). Reporting UNSAFE only with a confirmed witness gives **100% precision for every approach and every model**, at the cost of recall. Per instance, qwen on a laptop takes 3.3 s direct, 27 s CoT and 67 s (3.1 calls) for repair, against 1.7 s for CBMC. For 3.8 Flash, Z3 + repair averages 1.07 calls and 483 output tokens, the same as CoT (486).
+
+Replay-required policies turn unconfirmed UNSAFE into UNKNOWN; the hybrid uses CoT
+on Z3 UNKNOWN or failed replay, requiring confirmation for CoT bug claims too.
+Stopping after a duplicate script saves 134 qwen calls with unchanged scores.
+Immediate fallback after guided Z3 yields 120/120 and 60 confirmed bugs for both
+Gemini models (141/125 calls versus 154/128 with full repair); full repair loses one
+3.5 answer. These offline budgets are post hoc; pair-level Holm-corrected tests do
+not establish hybrid superiority. Token savings are unknown.
 
 ## 7. Discussion and Analysis
 
@@ -181,9 +189,9 @@ For qwen, the hybrid (bare Z3 when it runs, else CoT) is the best small-model sy
 
 **Prompting and feedback help only models that can use them.** The same guidance that cost qwen 17 points gained 3.5 Flash-Lite 4 and 3.8 Flash 15 (and removed all of 3.8's hallucinated APIs), and the same repair feedback that qwen ignored 83% of the time 3.5 Flash-Lite acted on every time. For small models the bottleneck is not missing knowledge but the ability to use it without degenerating, so constrained decoding (a whitelist of Z3 symbols) or sampled repair are the natural fixes. A pipeline tuned on one model does not transfer to another.
 
-**Ablation summary.** Removing CoT costs 3.5 Flash-Lite 22 points and nothing elsewhere; removing guidance costs the Gemini models 4–15 points but *helps* qwen; removing repair costs 4–15 points. Removing witness replay removes all precision guarantees for every approach: it is the one component whose value does not depend on the model.
+**Ablation summary.** Removing CoT costs 3.5 Flash-Lite 22 points and nothing elsewhere; removing guidance costs the Gemini models 4–15 points but *helps* qwen; removing repair costs 4–15 points. Replay filters unconfirmed bug inputs; observed precision does not guarantee future precision.
 
-**Direct vs tool: which to choose?** On this benchmark, for the strong models, the best direct approach matches Z3 + repair: 3.5 Flash-Lite CoT costs fewer tokens than repair (562 vs 718 output tokens, one call), and 3.8 Flash is perfect with plain direct review. The case for the tool is auditability: a Z3 "SAFE" is a specification plus a solver proof that a reviewer can inspect, re-run, or cross-check with CBMC, while a CoT "SAFE" is prose to be trusted. For small models, translation is only worthwhile on flat arithmetic, which was the fallback scope of our proposal.
+**Direct vs tool: which to choose?** Strong-model classification scores are similar, without establishing equivalence. 3.5 CoT uses fewer output tokens than repair (562 versus 718); 3.8 direct review is already perfect. Z3 adds an inspectable specification, but UNSAT establishes C safety only with faithful translation. Both approaches supply replayable bug inputs. Small-model translation performs best on flat arithmetic, the proposal's fallback scope.
 
 **Is an LLM the right tool at all?** CBMC decides all 120 instances correctly in 1.7 s, and dictionary fuzzing finds 58 of 60 bugs. Our instances (small, self-contained, explicit preconditions) are exactly where a bounded model checker excels. The realistic role of an LLM is to *produce what a sound verifier needs* (harnesses, preconditions, specifications for messier code) and let the tool decide, not to replace it. The LLM becomes necessary where the classical tool's inputs are not available: implicit preconditions, partial code, or languages without a mature checker.
 
@@ -215,7 +223,14 @@ For qwen, the hybrid (bare Z3 when it runs, else CoT) is the best small-model sy
 
 ## 10. Conclusion
 
-Whether an LLM reviews C safety better directly or by translating to Z3 depends on the model. Small open-weight models review at chance and cannot reliably write executable Z3; more tool knowledge made them worse and greedy repair repeated itself, though translation still read preconditions better and won on flat arithmetic. Stronger models reach 97.5–100% either way: chain of thought (or, for Gemini 3.8 Flash, plain direct review) and Z3 + repair are tied, guidance and repair now help translation instead of hurting it, and the solver contributes an auditable proof rather than accuracy. Across all models, replaying counterexamples makes bug reports trustworthy while "safe" verdicts remain unverifiable, and CBMC solves the whole benchmark without an LLM. Future work: harder, more realistic instances (pointers, implicit preconditions) that strong models do not saturate; models from other vendors with controlled thinking; a faithfulness check for UNSAT answers (differential testing against CBMC); and constrained decoding to the real Z3 API.
+Results depend on the model: small models struggle with Z3; both Gemini models
+benefit from guidance and repair but also classify accurately directly. Combining
+Z3 with CoT improves 3.5 from 118/120 to 119/120. On 3.8, repaired Z3 confirms
+60 bugs versus CoT's 59, with equal classifications. These findings support
+complementarity, not established superiority. Earlier fallback can save calls but
+needs held-out validation. UNSAT requires faithful translation; replay cannot
+prove safety. CBMC solves all 120 cases. Future work: harder code, more vendors,
+controlled thinking and UNSAT faithfulness checks.
 
 ## Division of Labour
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import subprocess
 from itertools import combinations
 from pathlib import Path
 
@@ -26,6 +27,10 @@ APPROACH_LABEL = {
     "hybrid_z3_else_cot": "Hybrid: LLM→Z3, else CoT", "hybrid_z3_repair_else_cot": "Hybrid: Z3+repair, else CoT", "validated_direct_cot": "CoT, witness-validated",
     "validated_z3_repair": "Z3+repair, witness-validated", "validated_direct": "Direct, witness-validated",
     "validated_z3": "LLM→Z3, witness-validated", "validated_z3_guided": "Z3 guided, witness-validated",
+    "strict_direct_cot": "CoT (replay required)",
+    "strict_z3_repair": "Z3+repair (replay required)",
+    "strict_hybrid_z3_else_cot": "Hybrid: Z3, else CoT (replay required)",
+    "strict_hybrid_z3_repair_else_cot": "Hybrid: Z3+repair, else CoT (replay required)",
 }
 
 
@@ -46,17 +51,40 @@ def _final_truncated(r: dict) -> bool:
     return r.get("verdict") == "UNKNOWN" and text.count("```") % 2 == 1
 
 
-def load_records(include_transcripts: bool = False) -> pd.DataFrame:
+def resolve_records_ref(ref: str) -> str:
+    """Resolve a local Git revision without changing the checkout or fetching."""
+    return subprocess.check_output(
+        ["git", "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"],
+        cwd=ROOT, text=True, encoding="utf-8",
+    ).strip()
+
+
+def load_records(include_transcripts: bool = False, records_ref: str | None = None) -> pd.DataFrame:
+    """Read working-tree records, or read them from an existing local Git revision."""
+    if records_ref is None:
+        sources = [(path.parent.name, path.read_text(encoding="utf-8"))
+                   for path in sorted(RUNS.glob("*/records.jsonl"))]
+    else:
+        commit = resolve_records_ref(records_ref)
+        paths = subprocess.check_output(
+            ["git", "ls-tree", "-r", "--name-only", commit, "--", "results/runs"],
+            cwd=ROOT, text=True, encoding="utf-8",
+        ).splitlines()
+        sources = [(Path(path).parent.name, subprocess.check_output(
+            ["git", "show", f"{commit}:{path}"], cwd=ROOT, text=True, encoding="utf-8",
+        )) for path in paths if path.endswith("/records.jsonl")]
     rows = []
-    for path in sorted(RUNS.glob("*/records.jsonl")):
-        if path.parent.name in EXCLUDE_RUNS:
+    for run, contents in sources:
+        if run in EXCLUDE_RUNS:
             continue
-        for line in path.open():
+        for line in contents.splitlines():
+            if not line.strip():
+                continue
             r = json.loads(line)
             r["final_truncated"] = _final_truncated(r)
             if not include_transcripts:
                 r.pop("transcript", None)
-            r["run"] = path.parent.name
+            r["run"] = run
             rows.append(r)
     df = pd.DataFrame(rows)
     if df.empty:
@@ -66,8 +94,8 @@ def load_records(include_transcripts: bool = False) -> pd.DataFrame:
     meta = pd.DataFrame([{"instance": i.id, "pair": i.pair, "tier": i.tier, "category": i.category,
                           "twin": i.twin, "label": i.label, "tags": ",".join(i.tags)} for i in load_dataset()])
     df = df.merge(meta, on="instance", how="inner")
-    # only complete (model, approach) runs are analysed; partial runs are listed in report/RUN_STATUS.md
-    full = df.groupby(["model", "approach"])["instance"].transform("nunique") >= df["instance"].nunique()
+    # Each analysed sample must cover the entire dataset; partial runs stay in RUN_STATUS.md.
+    full = df.groupby(["model", "approach", "sample"])["instance"].transform("nunique") == len(meta)
     df = df[full | (df["model"] == "tool")].copy()
     df["correct"] = df["verdict"] == df["gold"]
     df["decided"] = df["verdict"] != "UNKNOWN"
@@ -158,24 +186,77 @@ def summary(df: pd.DataFrame, by: list[str] | None = None) -> pd.DataFrame:
 
 
 # ----------------------------------------------------------------------- derived policies
+def _require_replay(records: pd.DataFrame) -> pd.DataFrame:
+    """Reject unconfirmed bug claims without consulting the ground-truth label."""
+    out = records.copy()
+    out["original_verdict"] = out["verdict"]
+    unconfirmed = out["verdict"].eq("UNSAFE") & out["witness_status"].ne("confirmed")
+    out["abstention_reason"] = ""
+    out.loc[unconfirmed, "verdict"] = "UNKNOWN"
+    out.loc[unconfirmed, "abstention_reason"] = "unconfirmed_witness"
+    return out
+
+
+def _hybrid(z: pd.DataFrame, c: pd.DataFrame, zv: str, strict: bool = False) -> pd.DataFrame:
+    common = z.index.intersection(c.index)
+    h = z.loc[common].copy()
+    use_cot = h["verdict"].eq("UNKNOWN")
+    h["fallback_reason"] = ""
+    h.loc[use_cot, "fallback_reason"] = "z3_unknown"
+    if strict:
+        rejected = h["verdict"].eq("UNSAFE") & h["witness_status"].ne("confirmed")
+        use_cot = use_cot | rejected
+        h.loc[rejected, "fallback_reason"] = "z3_unconfirmed_witness"
+    answer_columns = [col for col in (
+        "verdict", "violation", "witness", "witness_status", "witness_detail",
+        "exec_kind", "explanation", "parse", "transcript",
+    ) if col in h.columns]
+    h.loc[use_cot, answer_columns] = c.loc[h.index[use_cot], answer_columns]
+    h["answer_source"] = zv
+    h.loc[use_cot, "answer_source"] = "direct_cot"
+    cost_columns = [col for col in (
+        "llm_calls", "input_tokens", "output_tokens",
+    ) if col in h.columns]
+    h.loc[use_cot, cost_columns] = (
+        z.loc[h.index[use_cot], cost_columns] + c.loc[h.index[use_cot], cost_columns]
+    )
+    h["cost_basis"] = "estimated_sequential"
+    for col in ("wall_s", "llm_latency_s"):
+        if col in h.columns:
+            h[col] = math.nan
+    if strict:
+        h = _require_replay(h)
+    h["approach"] = f"{'strict_' if strict else ''}hybrid_{zv}_else_cot"
+    return h.reset_index()
+
+
 def derived_policies(df: pd.DataFrame) -> pd.DataFrame:
     """Post-hoc systems built from existing records (no extra model calls):
       hybrid_<z3 variant>_else_cot   use the Z3 verdict (bare or repair) when the script ran, else the CoT verdict
+        Answer fields follow the selected approach, recorded in `answer_source`.
+        Z3 attempts/status remain from the original Z3 record. Calls and tokens
+        estimate sequential execution: always Z3, plus CoT only on fallback.
+        Cached component timings do not provide a measured hybrid runtime.
       validated_<approach>   report UNSAFE only if that approach's witness reproduces under the sanitizers
       validated_z3_repair    report UNSAFE only if the Z3 counterexample reproduces
+      strict_<approach>   turn unconfirmed UNSAFE into UNKNOWN, retaining original SAFE claims
+      strict_hybrid_<z3 variant>_else_cot   also fall back on unconfirmed Z3 bug claims;
+        if the selected CoT bug claim is unconfirmed, the final answer is UNKNOWN
     """
     out = []
     for model, g in df[df["model"] != "tool"].groupby("model"):
-        piv = {a: x.set_index("instance") for a, x in g.groupby("approach")}
+        index = ["instance", "sample"] if "sample" in g.columns else ["instance"]
+        piv = {a: x.set_index(index) for a, x in g.groupby("approach")}
         for zv in ("z3", "z3_repair"):
             if zv in piv and "direct_cot" in piv:
                 z, c = piv[zv], piv["direct_cot"]
-                common = z.index.intersection(c.index)
-                h = z.loc[common].copy()
-                use_cot = h["verdict"] == "UNKNOWN"
-                h.loc[use_cot, "verdict"] = c.loc[common][use_cot]["verdict"]
-                h["approach"] = f"hybrid_{zv}_else_cot"
-                out.append(h.reset_index())
+                out.append(_hybrid(z, c, zv))
+                out.append(_hybrid(z, c, zv, strict=True))
+        for a in ("direct_cot", "z3_repair"):
+            if a in piv:
+                v = _require_replay(piv[a])
+                v["approach"] = f"strict_{a}"
+                out.append(v.reset_index())
         for a in APPROACH_ORDER:
             if a in piv:
                 v = piv[a].copy()
@@ -189,6 +270,96 @@ def derived_policies(df: pd.DataFrame) -> pd.DataFrame:
     d["correct"] = d["verdict"] == d["gold"]
     d["decided"] = d["verdict"] != "UNKNOWN"
     return d
+
+
+COMPARISON_APPROACHES = (
+    "direct_cot", "z3_repair", "hybrid_z3_repair_else_cot",
+    "strict_direct_cot", "strict_z3_repair", "strict_hybrid_z3_repair_else_cot",
+)
+
+
+def hybrid_comparison(df: pd.DataFrame, derived: pd.DataFrame) -> pd.DataFrame:
+    """Compare verdicts, reproducible findings, abstentions, and logical resource use."""
+    rows = []
+    systems = pd.concat([df, derived], ignore_index=True)
+    for (model, approach), g in systems[systems["approach"].isin(COMPARISON_APPROACHES)].groupby(
+        ["model", "approach"], sort=False
+    ):
+        m = metrics(g)
+        bugs = g["gold"].eq("UNSAFE")
+        confirmed = bugs & g["verdict"].eq("UNSAFE") & g["witness_status"].eq("confirmed")
+        row = {
+            "model": model, "approach": approach, "n": len(g),
+            "correct_verdicts": int(g["correct"].sum()), "accuracy": m["accuracy"],
+            "unsafe_cases": int(bugs.sum()), "confirmed_bugs": int(confirmed.sum()),
+            "confirmed_bug_recall": confirmed.sum() / bugs.sum() if bugs.any() else math.nan,
+            "unsafe_claims": m["unsafe_claims"], "precision": m["precision"],
+            "false_safe": m["fn"], "unknown": m["unknown"],
+            "unknown_on_unsafe": int((bugs & g["verdict"].eq("UNKNOWN")).sum()),
+            "coverage": m["coverage"], "selective_accuracy": m["selective_acc"],
+            "cost_basis": "estimated_sequential" if "hybrid_" in approach else "recorded_response_usage",
+        }
+        for field in ("llm_calls", "input_tokens", "output_tokens"):
+            # An unknown component cost makes the overall mean unknown, not cheaper.
+            row[f"mean_{field}"] = g[field].mean(skipna=False) if field in g else math.nan
+        rows.append(row)
+    columns = ["model", "approach", "n", "correct_verdicts", "accuracy", "unsafe_cases",
+               "confirmed_bugs", "confirmed_bug_recall", "unsafe_claims", "precision", "false_safe",
+               "unknown", "unknown_on_unsafe", "coverage", "selective_accuracy", "cost_basis",
+               "mean_llm_calls", "mean_input_tokens", "mean_output_tokens"]
+    out = pd.DataFrame(rows, columns=columns)
+    if out.empty:
+        return out
+    out["_order"] = out["approach"].map(COMPARISON_APPROACHES.index)
+    return out.sort_values(["model", "_order"]).drop(columns="_order").reset_index(drop=True)
+
+
+def hybrid_case_changes(df: pd.DataFrame, derived: pd.DataFrame) -> pd.DataFrame:
+    """List changes in verdict or confirmed evidence, including hybrid wins and losses.
+
+    Strict hybrids are compared with strict CoT, applying the same replay rule to both.
+    Ground truth is used only to score differences, never to select an answer.
+    """
+    rows = []
+    keys = ["instance", "sample"] if "sample" in df else ["instance"]
+    columns = ["model", "hybrid_approach", "baseline_approach", *keys, "pair", "tier", "category", "gold",
+               "cot_verdict", "cot_witness_status", "hybrid_verdict", "hybrid_witness_status",
+               "answer_source", "fallback_reason", "verdict_change", "evidence_change",
+               "cot_witness", "hybrid_witness"]
+    if derived.empty:
+        return pd.DataFrame(columns=columns)
+    for (model, approach), g in derived[derived["approach"].str.contains("hybrid_")].groupby(
+        ["model", "approach"]
+    ):
+        strict = approach.startswith("strict_")
+        baseline_approach = "strict_direct_cot" if strict else "direct_cot"
+        pool = derived if strict else df
+        baseline = pool[(pool["model"] == model) & (pool["approach"] == baseline_approach)].set_index(keys)
+        for key, h in g.set_index(keys).iterrows():
+            c = baseline.loc[key]
+            hc = h["verdict"] == "UNSAFE" and h["witness_status"] == "confirmed"
+            cc = c["verdict"] == "UNSAFE" and c["witness_status"] == "confirmed"
+            if h["verdict"] == c["verdict"] and hc == cc:
+                continue
+            row = {"model": model, "hybrid_approach": approach, "baseline_approach": baseline_approach,
+                   "instance": h.name[0] if isinstance(h.name, tuple) else h.name}
+            if "sample" in keys:
+                row["sample"] = h.name[1]
+            for field in ("pair", "tier", "category", "gold"):
+                row[field] = h.get(field)
+            row.update(
+                cot_verdict=c["verdict"], cot_witness_status=c["witness_status"],
+                hybrid_verdict=h["verdict"], hybrid_witness_status=h["witness_status"],
+                answer_source=h["answer_source"], fallback_reason=h.get("fallback_reason", ""),
+                verdict_change=("hybrid_only_correct" if h["correct"] and not c["correct"] else
+                                "cot_only_correct" if c["correct"] and not h["correct"] else "same_correctness"),
+                evidence_change=("hybrid_only_confirmed" if hc and not cc else
+                                 "cot_only_confirmed" if cc and not hc else "same_confirmation"),
+                cot_witness=json.dumps(c["witness"], sort_keys=True) if isinstance(c.get("witness"), dict) else "null",
+                hybrid_witness=json.dumps(h["witness"], sort_keys=True) if isinstance(h.get("witness"), dict) else "null",
+            )
+            rows.append(row)
+    return pd.DataFrame(rows, columns=columns)
 
 
 # ---------------------------------------------------------------------- z3 pipeline detail

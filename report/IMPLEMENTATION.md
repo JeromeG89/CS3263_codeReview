@@ -79,7 +79,7 @@ Two design ideas run through the whole project:
 | CBMC | 6.11.0 (Homebrew) | independent bounded model checker |
 | Ollama | 0.34.4 | serves the local models |
 | Local models | `qwen2.5-coder:7b` (4.7 GB), `llama3.2:3b` (2.0 GB) | models under evaluation |
-| Gemini | REST API `v1beta/models/{model}:generateContent`, `gemini-3.5-flash-lite` and `gemini-3.8-flash` (the 2.5 models are listed but refused for new API users) | models under evaluation (once a key is available) |
+| Gemini | REST API `v1beta/models/{model}:generateContent`, `gemini-3.5-flash-lite` and `gemini-3.8-flash` (the 2.5 models are listed but refused for new API users) | both models evaluated on all five approaches |
 | Hardware | Apple M3 Pro laptop, 18 GB unified memory | all runs |
 
 ---
@@ -433,7 +433,7 @@ After each failed attempt, one message is appended (texts verbatim in Appendix B
 | Samples per instance | 1 | Compute budget. Variance between samples is listed as a threat to validity. |
 | Parallelism | one request at a time | We measured that running both models concurrently on the laptop GPU slows each by about 2×, so they run one after the other. |
 | Caching | SQLite cache keyed on (provider, model, settings, system prompt, full message history) | Runs resume after interruption, re-analysis needs no new calls, and identical requests are answered from the cache. This is why `z3_repair`'s first attempt is identical to `z3_guided`. |
-| Gemini | `gemini-3.5-flash-lite` and `gemini-3.8-flash`; temperature 0; max 4,096 tokens; 10 requests/min client-side limit; retries on 429/5xx honouring Google's `retryDelay`; API-level failures are never recorded and the run stops after 5 in a row. **Thinking:** 3.8 Flash runs with `thinkingBudget: 0`; 3.5 Flash-Lite rejects that option and runs with the API default (no thinking tokens observed) | We first configured `gemini-2.5-flash(-lite)`, but Google refuses those for new users. Disabling thinking keeps `direct` truly direct; turning it on is a ready-made ablation (commented entry in `configs/gemini.yaml`). |
+| Gemini | `gemini-3.5-flash-lite` and `gemini-3.8-flash`; temperature 0; max 4,096 tokens; 10 requests/min for 3.5 and a current configured limit of 60 for 3.8; retries on 429/5xx honouring Google's `retryDelay`; API-level failures are never recorded and the run stops after 5 in a row. **Thinking:** 3.8 Flash runs with `thinkingBudget: 0`; 3.5 Flash-Lite rejects that option and runs with the API default (no thinking tokens observed) | We first configured `gemini-2.5-flash(-lite)`, but Google refuses those for new users. A zero thinking budget does not eliminate 3.8's hidden reasoning, so its `direct` condition is not reasoning-free; a larger budget is an optional ablation (commented entry in `configs/gemini.yaml`). |
 
 ---
 
@@ -521,9 +521,23 @@ These are related to correctness.
 - *Hybrid*: use the Z3 + repair answer, falling back to the CoT answer when the script never ran.
 - *Witness-validated*: report UNSAFE only with a confirmed witness.
 
+**Replay-required extension.** `strict_direct_cot` and `strict_z3_repair` turn unconfirmed UNSAFE claims into UNKNOWN, never SAFE. `strict_hybrid_z3_repair_else_cot` uses the final stored repair result, falls back on either UNKNOWN or an unconfirmed bug input, then requires any selected CoT bug input to be confirmed too. Original policies are retained. This is an offline policy over saved results, not a new live runner or a change to prompts or replay checking. The policy does not read the gold label when deciding an answer.
+
+Hybrid answer fields, including witnesses and transcripts when loaded, follow `answer_source`. Z3 attempts/status remain as diagnostics. `fallback_reason` distinguishes solver/pipeline UNKNOWN from an unconfirmed Z3 witness; `abstention_reason` records rejection of the final bug claim. Calls and input/output tokens estimate sequential execution, including all existing Z3 repair calls and CoT only on fallback. `cost_basis` is `estimated_sequential`; hybrid wall time and LLM latency are unknown because cached component runs do not measure fresh hybrid runtime. Matching uses instance and sample IDs.
+
+`python scripts/analyze.py --comparison-only --records-ref ecc7f3a` reads the completed saved records from that existing local Git commit without checkout, fetch, model calls, solver execution or C replay. It writes `results/analysis/hybrid_comparison.md`, `hybrid_comparison.csv` and `hybrid_cases.csv`. The Markdown records the exact source revision; dataset metadata is loaded from the working tree. The new table reports verdict accuracy, confirmed-bug recall, precision, coverage, explicit false SAFE claims, UNKNOWN counts and estimated calls/tokens. Unknown token usage is not treated as zero. Case exports include both hybrid wins and CoT wins, and compare strict methods with the same replay requirement. These new exploratory comparisons do not change the existing significance-test family.
+
+The offline tests in `tests/test_hybrid_workflow.py` can also run without pytest: set `PYTHONPATH=src`, then run `python -m unittest discover -s tests -p test_hybrid_workflow.py`. They cover the strict decision flow, missing witnesses, label-free selection, sample alignment, costs, table counts and case export.
+
 **Significance:**
 - **Exact McNemar tests** compare approaches on the *same* instances. Six planned comparisons per model, with **Holm** correction across all models.
 - Model-vs-model comparisons use the same test and are reported as exploratory.
+
+**Offline repair efficiency and sensitivity.** `repair_analysis.repair_snapshot` selects a prefix of the saved repair trace using a fixed budget or the first consecutive identical nonempty script. It counts the duplicate call and can avoid only later calls; it never reads a label or a future answer to stop. `repair_efficiency` scores raw repair verdicts and the replay-required CoT fallback, including the fallback's calls. It exports marginal gains and losses, confirmed bugs, calls per extra correct verdict, and per-case changes. Truncated traces have unknown token usage because the logs contain only whole-run totals. The live repair loop is unchanged.
+
+`sensitivity.pair_sensitivity` aligns instance/sample keys, rejects incomplete twins, and aggregates scores within each benchmark pair. It bootstraps 60 whole pairs with 20,000 draws and seed 3263, then swaps method assignments for whole pairs. The sign-flip p-value is exact with at most 16 nonzero pair differences, otherwise Monte Carlo with the plus-one correction. Five fixed comparisons (CoT vs repair, CoT vs original hybrid, strict CoT vs strict repair, strict CoT vs strict hybrid, guided vs repair), two outcomes (accuracy and confirmed-bug recall), and three models with repair form a new 30-test Holm family. The original McNemar tests remain unchanged. Intervals are percentile sensitivity intervals, not a guarantee of generalisation or equivalence at the ceiling.
+
+`python scripts/analyze.py --repair-analysis-only --records-ref ecc7f3a` writes `repair_efficiency.csv`, `repair_cases.csv` and `pair_sensitivity.csv` in `results/analysis/`, and `fig8_repair_efficiency.png` in `report/figures/`. Duplicate notes (`repair_analysis.md`) and provenance (`repair_metadata.json`) go to ignored `build/analysis/`. Report §6.8.2 is the main readable explanation. `--comparison-only` also generates `fig9_review_evidence.png`, separating original classification scores from confirmed bug inputs. `--resamples` and `--seed` are recorded in the outputs. `tests/test_repair_analysis.py` checks prefix selection, repeated-script rules, losses after early stopping, fallback recovery and costs, cluster-level pairing, exact p-values against SciPy, deterministic sampling, and exports. Both new offline test files run with the standard-library unittest runner and need no model, Z3 or C compiler.
 
 ---
 
@@ -563,7 +577,7 @@ The full results, with every table and figure, are in **`report/REPORT.md` §6**
 - qwen2.5-coder 7B: all 5 approaches × 120 instances.
 - llama3.2 3B: direct, CoT, bare Z3 and guided Z3. Its repair variant was skipped (§6.6 of the report).
 - Gemini 3.5 Flash-Lite: all 5 approaches × 120 instances.
-- Gemini 3.8 Flash: not run beyond 4 test answers. Google's free tier allows 20 requests a day for it (see `report/RUN_STATUS.md`).
+- Gemini 3.8 Flash: all 5 approaches × 120 instances completed.
 - Baselines: all 120 instances.
 
 | Model | Approach | Accuracy [95% CI] | Recall | Specificity | No answer |
@@ -582,7 +596,11 @@ The full results, with every table and figure, are in **`report/REPORT.md` §6**
 | Gemini 3.5 Flash-Lite | LLM→Z3 | 78.3% [70.1, 84.8] | 78.3% | 78.3% | 23 |
 | Gemini 3.5 Flash-Lite | LLM→Z3 guided | 82.5% [74.7, 88.3] | 83.3% | 81.7% | 19 |
 | Gemini 3.5 Flash-Lite | LLM→Z3 guided + repair | **97.5%** [92.9, 99.1] | 98.3% | 96.7% | 2 |
-| Gemini 3.8 Flash | all approaches | not run (free-tier cap, see `report/RUN_STATUS.md`) | | | |
+| Gemini 3.8 Flash | Direct | 100.0% [96.9%, 100.0%] | 100.0% | 100.0% | 0 |
+| Gemini 3.8 Flash | Direct + CoT | 100.0% [96.9%, 100.0%] | 100.0% | 100.0% | 0 |
+| Gemini 3.8 Flash | LLM→Z3 | 80.8% [72.9%, 86.9%] | 85.0% | 76.7% | 21 |
+| Gemini 3.8 Flash | LLM→Z3 guided | 95.8% [90.6%, 98.2%] | 98.3% | 93.3% | 5 |
+| Gemini 3.8 Flash | LLM→Z3 guided + repair | 100.0% [96.9%, 100.0%] | 100.0% | 100.0% | 0 |
 | qwen 7B | **Hybrid: Z3 if it runs, else CoT** | **63.3%** | **53.3%** | 73.3% | 0 |
 | tool | Gold Z3 / CBMC | 100% / 100% | 100% | 100% | 0 |
 | tool | Dictionary / random fuzzing | 98.3% / 85.0% | 96.7% / 70.0% | 100% | 0 |
@@ -593,21 +611,22 @@ The full results, with every table and figure, are in **`report/REPORT.md` §6**
    - qwen's bare LLM→Z3 scores 67.5% on flat arithmetic vs 57.5% for direct review, and gets both precondition twins right in 35% of pairs vs 9%.
    - But qwen's scripts run 60% of the time; llama's bare scripts never run and only 3 of 120 guided scripts do.
    - Causes: invented APIs (`BVSDivNoUnderflow` ×59; `from z3.solvers import Solver` in all 120 of llama's bare scripts), Python `|` on Z3 Booleans, and repetition loops that hit the 3,072-token limit.
-3. **Small models: guidance hurt qwen** (40% → 23%, p = 0.001), and **repair barely helped** (+5 instances; 83% of greedy repair attempts were identical to the previous script).
+3. **Small models: guidance hurt qwen** (40% → 23%, uncorrected p = 0.0012; Holm-adjusted p = 0.024), and **repair barely helped** (+5 instances; 83% of greedy repair attempts were identical to the previous script).
 4. **A stronger model reverses this (Gemini 3.5 Flash-Lite).**
    - Direct 76.7%; **CoT 98.3%**; bare Z3 78.3%; guided 82.5%; **guided + repair 97.5%**.
    - Guidance helps (+4 points) and repair works: +15 points (p < 10⁻⁴), 98% of final scripts execute, 0 of 32 repair attempts repeated the previous script.
-   - CoT and Z3 + repair are tied (p = 1.0). Both report only confirmed bugs. Hybrid "Z3 + repair, else CoT": 99.2%.
-5. **Counterexample replay is a free filter** for every approach: witness-validated reporting has 100% precision.
-6. **Classical tools win.** CBMC and the gold encodings decide all 120 instances in under 2 s each.
+   - CoT and Z3 + repair show no significant difference (p = 1.0). Both report only confirmed bugs. Hybrid "Z3 + repair, else CoT": 99.2%.
+5. **Both Gemini runs are complete.** 3.8 direct review, CoT and Z3 + repair classify all 120 correctly, but CoT and repair supply 59 and 60 working bug inputs respectively. See report §6.8 for original and replay-required comparisons and estimated calls.
+6. **Counterexample replay filters bug reports** for every approach: the retained reports have 100% observed precision on this benchmark; this is not a guarantee for new code.
+7. **Classical tools solve the benchmark.** CBMC and the gold encodings decide all 120 instances in under 2 s each.
 
 ## 17. Discussion
 
 The full discussion is in **`report/REPORT.md` §7**; Responsible AI is §8 and threats to validity §9. In short:
 
-- **The answer depends on the model.** For small models, direct review always answers but does not reason, while translation reasons through the solver but often cannot produce a working script. For Gemini 3.5 Flash-Lite, chain of thought (98.3%) and Z3 + repair (97.5%) are tied, and both beat direct answers (76.7%).
+- **The answer depends on the model.** For small models, direct review always answers but does not reason, while translation reasons through the solver but often cannot produce a working script. For Gemini 3.5 Flash-Lite, chain of thought (98.3%) and Z3 + repair (97.5%) show no significant difference, and both beat direct answers (76.7%).
 - **The same prompt helped one model and hurt another.** Guidance cut qwen from 40% to 23% but raised Gemini from 78% to 82.5%; repair feedback was ignored by qwen and used by Gemini.
-- **For a strong model, the Z3 pipeline's value is auditability, not accuracy.** The "safe" verdict comes with a specification and a solver proof that can be inspected and cross-checked.
+- **For strong models, Z3 adds inspectable specifications and complementary evidence.** 3.8 CoT and repaired Z3 both classify all 120 correctly, but supply 59 and 60 confirmed bug inputs respectively. UNSAT establishes safety only if the specification faithfully translates the C code.
 - **The proposal's fallback scope (flat arithmetic) is exactly where translation works** for small models.
 - **"Knowledge required by the tool"** fails in three layers for small models: API names, host-language (Python) semantics, and C semantics.
 - **The key Responsible AI point.** Bug reports can be checked automatically by replay, but "safe" verdicts cannot. An LLM's "looks safe" carries no evidence, and an UNSAT proves only the formula the model wrote.
@@ -618,7 +637,7 @@ The full discussion is in **`report/REPORT.md` §7**; Responsible AI is §8 and 
 ## 18. Deviations from the proposal, limitations, next steps
 
 **Deviations:**
-- The proposal said "frontier model"; at the team's request we evaluated small local models first, with Gemini configured for later.
+- The proposal said "frontier model"; at the team's request we evaluated small local models first, then completed both Gemini evaluations.
 - We added things the proposal did not have:
   - CBMC and fuzzing baselines;
   - counterexample re-execution;
@@ -634,7 +653,7 @@ The full discussion is in **`report/REPORT.md` §7**; Responsible AI is §8 and 
 - The network and file sandbox is macOS-only.
 
 **Next steps:**
-1. Run Gemini once a key is in `.env`; free-tier daily caps may spread this over several days, and runs resume.
+1. Both Gemini runs are complete; use saved records for report analysis without new API calls.
 2. Optional ablations: Gemini with thinking enabled; several samples at temperature > 0 for variance.
 3. Presentation (week of 9 Nov) and final report (13 Nov).
 
