@@ -1,0 +1,11 @@
+# Meta Llama open-weight models hosted on Groq (OpenAI-compatible API). Needs GROQ_API_KEY in .env.
+# Free-tier limits are per model and per organisation (requests/day, tokens/day, tokens/minute);
+# check them with:  python scripts/list_llm_limits.py --provider groq
+# Model ids change: check with  python scripts/list_llm_limits.py --provider groq --models
+run_name: groq
+workers: 1            # the binding limit is tokens per minute, so run requests one at a time
+max_repairs: 3
+models:
+  - {provider: groq, model: "llama-3.3-70b-versatile", max_tokens: 3072, temperature: 0.0, rpm: 20}
+  - {provider: groq, model: "meta-llama/llama-4-scout-17b-16e-instruct", max_tokens: 3072, temperature: 0.0, rpm: 20}
+approaches: [direct, direct_cot, z3, z3_guided, z3_repair]

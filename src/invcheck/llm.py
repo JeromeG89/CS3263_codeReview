@@ -231,7 +231,81 @@ def _post_with_deadline(url: str, body: dict, headers: dict, deadline_s: float) 
     return box["r"]
 
 
-PROVIDERS = {"ollama": Ollama, "gemini": Gemini}
+def _parse_wait(text: str) -> float | None:
+    """Seconds from strings like 'Please try again in 7m12.5s', '2m', '850ms', '30s', or a bare number."""
+    import re
+    m = re.search(r"try again in ([\dhms.]+)", text)
+    s = m.group(1) if m else text.strip()
+    if re.fullmatch(r"[\d.]+", s or ""):
+        return float(s)
+    total, found = 0.0, False
+    for num, unit in re.findall(r"([\d.]+)(ms|h|m|s)", s or ""):
+        found = True
+        total += float(num) * {"h": 3600, "m": 60, "s": 1, "ms": 0.001}[unit]
+    return total if found else None
+
+
+class OpenAICompatible(LLM):
+    """Any OpenAI-compatible chat-completions endpoint (Groq, OpenRouter, ...).
+
+    opts: rpm (client-side request rate), deadline_s (hard per-request time limit)."""
+
+    provider = "openai_compatible"
+    base_url = ""
+    key_env = ""
+    _locks: dict = {}
+    _last: dict = {}
+
+    def _throttle(self):
+        rpm = float(self.opts.get("rpm", 20))
+        lock = OpenAICompatible._locks.setdefault(self.provider, threading.Lock())
+        with lock:
+            wait = OpenAICompatible._last.get(self.provider, 0.0) + 60.0 / rpm - time.time()
+            if wait > 0:
+                time.sleep(wait)
+            OpenAICompatible._last[self.provider] = time.time()
+
+    def _chat(self, system, messages):
+        key = os.environ.get(self.key_env)
+        if not key:
+            raise RuntimeError(f"{self.key_env} is not set (put it in .env)")
+        self._throttle()
+        body = {"model": self.model, "messages": [{"role": "system", "content": system}, *messages],
+                "temperature": self.temperature, "max_tokens": self.max_tokens, "seed": self.seed}
+        t0 = time.time()
+        r = _post_with_deadline(f"{self.base_url}/chat/completions", body, {"Authorization": f"Bearer {key}"},
+                                deadline_s=float(self.opts.get("deadline_s", 240)))
+        if r.status_code in (429, 500, 502, 503, 504):
+            wait = _parse_wait(r.headers.get("retry-after", "")) if r.headers.get("retry-after") else None
+            try:
+                msg = r.json().get("error", {}).get("message", "")
+            except Exception:  # noqa: BLE001
+                msg = r.text[:300]
+            wait = _parse_wait(msg) or wait
+            if r.status_code == 429 and wait is not None and wait > 900:
+                raise QuotaExhausted(f"{self.provider} 429 on {self.model}; retry in {wait / 3600:.1f} h ({msg[:160]})")
+            raise RetryableError(f"{self.provider} {r.status_code}: {msg[:300]}", wait)
+        if r.status_code != 200:
+            raise RuntimeError(f"{self.provider} {r.status_code}: {r.text[:500]}")
+        d = r.json()
+        text = ((d.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        usage = d.get("usage") or {}
+        return Completion(text, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), time.time() - t0)
+
+
+class Groq(OpenAICompatible):
+    provider = "groq"
+    base_url = "https://api.groq.com/openai/v1"
+    key_env = "GROQ_API_KEY"
+
+
+class OpenRouter(OpenAICompatible):
+    provider = "openrouter"
+    base_url = "https://openrouter.ai/api/v1"
+    key_env = "OPENROUTER_API_KEY"
+
+
+PROVIDERS = {"ollama": Ollama, "gemini": Gemini, "groq": Groq, "openrouter": OpenRouter}
 
 
 def make_llm(spec: dict) -> LLM:

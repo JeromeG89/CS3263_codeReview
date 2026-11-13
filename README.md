@@ -99,7 +99,8 @@ The quickest way to see what each section of the two hand-edited documents cover
 configs/                 run configurations (models, approaches, workers, repair budget)
   local.yaml             qwen2.5-coder:7b (+ llama3.2:3b) via Ollama
   local_llama.yaml       llama3.2:3b only (the run used for llama's results)
-  gemini.yaml            gemini-3.5-flash-lite + gemini-3.8-flash (both completed) via the Gemini API
+  gemini.yaml            gemini-3.5-flash-lite (done) + gemini-3.8-flash (free-tier cap) via the Gemini API
+  groq.yaml              Meta Llama 3.3 70B + Llama 4 Scout via Groq (needs GROQ_API_KEY)
   smoke.yaml             quick end-to-end check (records excluded from analysis)
 dataset/
   instances/tier{1..4}.yaml   the 120 evaluation instances
@@ -114,6 +115,7 @@ scripts/
   build_appendices.py    writes report/APPENDIX.md
   run_status.py          writes report/RUN_STATUS.md
   list_gemini_models.py  lists the Gemini model ids your API key can use
+  list_llm_limits.py     model ids and per-model rate limits for a Groq / OpenRouter key
 src/invcheck/
   dataset.py     instance model, loading, preconditions, witness clean-up, SAFETY_SPEC
   cexec.py       ASan+UBSan harness: compile once, run many inputs from stdin
@@ -195,6 +197,9 @@ python scripts/run_status.py                        # report/RUN_STATUS.md
 - The current config limits 3.5 Flash-Lite to 10 and 3.8 Flash to 60 requests/minute. The free tier's daily quota resets at midnight Pacific time.
 - `gemini-3.8-flash` runs with `thinking_budget: 0`. `gemini-3.5-flash-lite` rejects that option, so it runs with the API default.
 - An ablation of an already-listed model (e.g. thinking on) must set `label_suffix`, or its records collide with the base model's.
+- **Free-tier reality (checked 2026-10-18):** every strong Gemini Flash model (3.5, 3.6, 3.7, 3.8, 3 Flash Preview) is capped at 20 requests/day, and the Pro models have no free quota. Only the Flash-Lite models are usable for a full run on a free key.
+
+**Meta Llama models on Groq** (`configs/groq.yaml`): Groq hosts Meta's open-weight Llama 3.3 70B and Llama 4 Scout behind an OpenAI-compatible API with a free key (no card) from console.groq.com/keys. Put it in `.env` as `GROQ_API_KEY`, check your per-model limits with `python scripts/list_llm_limits.py --provider groq`, then run `python scripts/run_eval.py --config configs/groq.yaml`. Free daily token caps mean a full model may take several days; the run resumes where it stopped.
 
 ## Dataset format (for adding instances)
 
