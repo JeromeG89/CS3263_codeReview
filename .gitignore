@@ -9,3 +9,4 @@ results/cache/
 .DS_Store
 results/logs/
 *.bak
+src/invcheck.egg-info/
